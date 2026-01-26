@@ -1,35 +1,128 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
+import { Tabs } from "expo-router";
+import { Platform, StyleSheet, View } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+function TabIcon({
+  name,
+  color,
+  size,
+  focused,
+}: {
+  name: string;
+  color: string;
+  size: number;
+  focused: boolean;
+}) {
+  return (
+    <View style={styles.iconWrapper}>
+      <MaterialCommunityIcons
+        name={name}
+        size={focused ? size + 2 : size} // ícone levemente maior se ativo
+        color={focused ? "#1877F2" : color} // cor azul Facebook se ativo
+      />
+    </View>
+  );
+}
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
+export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            height: Platform.OS === "ios" ? 70 : 60,
+            paddingBottom: Platform.OS === "ios" ? 15 : 8,
+          },
+        ],
+        tabBarActiveTintColor: "#1877F2",
+        tabBarInactiveTintColor: "#8e8e93",
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "500",
+        },
+      }}
+    >
       <Tabs.Screen
-        name="index"
+        name="feed"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: "Feed",
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon
+              name={focused ? "home-variant" : "home-variant-outline"}
+              color={color}
+              size={size}
+              focused={focused}
+            />
+          ),
         }}
       />
+
       <Tabs.Screen
-        name="explore"
+        name="procurar"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: "Procurar",
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon name="magnify" color={color} size={size} focused={focused} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="estantes"
+        options={{
+          title: "Estantes",
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon name="bookshelf" color={color} size={size} focused={focused} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="criticas"
+        options={{
+          title: "Críticas",
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon
+              name={focused ? "comment-quote" : "comment-quote-outline"}
+              color={color}
+              size={size}
+              focused={focused}
+            />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="perfil"
+        options={{
+          title: "Perfil",
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon
+              name={focused ? "account-circle" : "account-circle-outline"}
+              color={color}
+              size={size}
+              focused={focused}
+            />
+          ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBar: {
+    backgroundColor: "#fff", // fundo branco padrão
+    borderTopWidth: 0,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  iconWrapper: {
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+});
