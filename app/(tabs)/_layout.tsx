@@ -1,24 +1,16 @@
+// app/(tabs)/_layout.tsx
+import React from "react";
 import { Tabs } from "expo-router";
 import { Platform, StyleSheet, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
-function TabIcon({
-  name,
-  color,
-  size,
-  focused,
-}: {
-  name: string;
-  color: string;
-  size: number;
-  focused: boolean;
-}) {
+function TabIcon({ name, color, size, focused }: { name: string; color: string; size: number; focused: boolean }) {
   return (
     <View style={styles.iconWrapper}>
       <MaterialCommunityIcons
         name={name}
-        size={focused ? size + 2 : size} // ícone levemente maior se ativo
-        color={focused ? "#1877F2" : color} // cor azul Facebook se ativo
+        size={focused ? size + 2 : size}
+        color={focused ? "#1877F2" : color}
       />
     </View>
   );
@@ -114,7 +106,7 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: "#fff", // fundo branco padrão
+    backgroundColor: "#fff",
     borderTopWidth: 0,
     elevation: 0,
     shadowOpacity: 0,

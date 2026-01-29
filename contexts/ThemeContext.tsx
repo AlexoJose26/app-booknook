@@ -21,7 +21,7 @@ interface ThemeContextType {
   toggleTheme: () => void;
 }
 
-/* 🎨 Cores */
+
 const lightColors: ThemeColors = {
   background: "#F9FAFB",
   overlay: "rgba(255,255,255,0.8)",

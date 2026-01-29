@@ -2,250 +2,205 @@ import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   Image,
+  TouchableOpacity,
   StyleSheet,
-  ScrollView,
   Alert,
+  ActivityIndicator,
   Modal,
+  Pressable,
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useThemeCustom } from "@/contexts/ThemeContext";
-import { useUsuario } from "@/contexts/UserContext";
-import { useRouter } from "expo-router";
-import { Entypo, Ionicons } from "@expo/vector-icons";
-import { db } from "@/database/db";
-import { usuarios } from "@/database/schema";
+import * as ImagePicker from "expo-image-picker";
+import { db, initDB } from "../../database/db";
+import { usuarios } from "../../database/schema";
 import { eq } from "drizzle-orm";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function Perfil() {
-  const { theme } = useThemeCustom();
-  const isDark = theme === "dark";
+  const [usuario, setUsuario] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [fotoLoading, setFotoLoading] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
   const router = useRouter();
-  const { usuario, setUsuario } = useUsuario();
 
-  const [foto, setFoto] = useState<string | null>(null);
-  const [menuVisivel, setMenuVisivel] = useState(false);
-
-  /* ===============================
-     CARREGAR USUÁRIO
-  =============================== */
   useEffect(() => {
-    if (usuario?.foto_perfil) {
-      setFoto(usuario.foto_perfil);
+    carregarUsuario();
+  }, []);
+
+  async function carregarUsuario() {
+    try {
+      initDB();
+
+      // ✅ Busca usuário do AsyncStorage
+      const usuarioStr = await AsyncStorage.getItem("usuarioLogado");
+      if (!usuarioStr) {
+        router.replace("/login");
+        return;
+      }
+
+      const usuarioObj = JSON.parse(usuarioStr);
+      setUsuario(usuarioObj);
+
+      // ✅ Atualiza o usuário no banco (caso precise pegar foto)
+      const result = await db
+        .select()
+        .from(usuarios)
+        .where(eq(usuarios.id, usuarioObj.id));
+
+      if (result.length) {
+        setUsuario(result[0]);
+      }
+    } catch (e) {
+      console.error("Erro ao carregar usuário:", e);
+      Alert.alert("Erro", "Não foi possível carregar os dados do usuário.");
+    } finally {
+      setLoading(false);
     }
-  }, [usuario]);
+  }
 
-  /* ===============================
-     ESCOLHER FOTO
-  =============================== */
-  const escolherFoto = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permissão necessária", "Ative o acesso à galeria.");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      const uri = result.assets[0].uri;
-      await salvarPerfil(uri);
-      setMenuVisivel(false);
-    }
-  };
-
-  /* ===============================
-     SALVAR PERFIL (DB + STORAGE)
-  =============================== */
-  const salvarPerfil = async (novaFoto?: string) => {
+  async function alterarFoto() {
     if (!usuario) return;
 
     try {
-      const fotoFinal = novaFoto ?? foto ?? null;
+      setFotoLoading(true);
+      const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.7 });
+      if (res.canceled) return;
 
-      // 🔥 Atualiza no SQLite
+      const uri = res.assets[0].uri;
+
       await db
         .update(usuarios)
-        .set({ foto_perfil: fotoFinal })
+        .set({ foto_perfil: uri })
         .where(eq(usuarios.id, usuario.id));
 
-      const usuarioAtualizado = {
-        ...usuario,
-        foto_perfil: fotoFinal,
-      };
+      const atualizado = { ...usuario, foto_perfil: uri };
+      setUsuario(atualizado);
 
-      // 🔄 Atualiza sessão
-      await AsyncStorage.setItem(
-        "usuarioLogado",
-        JSON.stringify(usuarioAtualizado)
-      );
-
-      setUsuario(usuarioAtualizado);
-      setFoto(fotoFinal);
-
-      Alert.alert("Sucesso", "Perfil atualizado com sucesso!");
+      await AsyncStorage.setItem("usuarioLogado", JSON.stringify(atualizado));
     } catch (e) {
-      console.log(e);
-      Alert.alert("Erro", "Não foi possível salvar o perfil.");
+      console.error("Erro ao alterar foto:", e);
+      Alert.alert("Erro", "Falha ao atualizar foto");
+    } finally {
+      setFotoLoading(false);
     }
-  };
+  }
 
-  /* ===============================
-     LOGOUT
-  =============================== */
-  const terminarSessao = () => {
-    Alert.alert("Sair", "Deseja terminar a sessão?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Sair",
-        style: "destructive",
-        onPress: async () => {
-          await AsyncStorage.removeItem("usuarioLogado");
-          setUsuario(null);
-          router.replace("/login");
+  function logout() {
+    Alert.alert(
+      "Terminar sessão",
+      "Deseja mesmo sair?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Sair",
+          style: "destructive",
+          onPress: async () => {
+            await AsyncStorage.clear();
+            router.replace("/login");
+          },
         },
-      },
-    ]);
-    setMenuVisivel(false);
-  };
+      ],
+      { cancelable: true }
+    );
+  }
+
+  if (loading)
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#22c55e" />
+      </View>
+    );
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: isDark ? "#111827" : "#E5E7EB" },
-      ]}
-    >
-      {/* Menu */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setMenuVisivel(true)}>
-          <Entypo
-            name="dots-three-vertical"
-            size={22}
-            color={isDark ? "#F9FAFB" : "#111827"}
-          />
+    <View style={styles.container}>
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          style={styles.userInfo}
+          onPress={alterarFoto}
+          disabled={fotoLoading}
+        >
+          {usuario?.foto_perfil ? (
+            <Image source={{ uri: usuario.foto_perfil }} style={styles.avatar} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              {fotoLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={{ color: "#fff", fontSize: 20 }}>+</Text>
+              )}
+            </View>
+          )}
+          <Text style={styles.nome}>{usuario?.nome}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => setMenuVisible(true)}>
+          <Ionicons name="ellipsis-vertical" size={28} color="#000" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {foto ? (
-          <Image source={{ uri: foto }} style={styles.foto} />
-        ) : (
-          <View
-            style={[
-              styles.placeholder,
-              { backgroundColor: isDark ? "#1F2937" : "#D1D5DB" },
-            ]}
-          >
-            <Ionicons
-              name="person"
-              size={32}
-              color={isDark ? "#9CA3AF" : "#6B7280"}
-            />
-          </View>
-        )}
-
-        <Text
-          style={[
-            styles.nome,
-            { color: isDark ? "#F9FAFB" : "#111827" },
-          ]}
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <Pressable
+          style={styles.modalBackground}
+          onPress={() => setMenuVisible(false)}
         >
-          {usuario?.nome}
-        </Text>
-      </ScrollView>
-
-      {/* MENU MODAL */}
-      <Modal transparent visible={menuVisivel} animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          onPress={() => setMenuVisivel(false)}
-        >
-          <View
-            style={[
-              styles.menu,
-              { backgroundColor: isDark ? "#1F2937" : "#FFF" },
-            ]}
-          >
-            <TouchableOpacity style={styles.menuItem} onPress={escolherFoto}>
-              <Text style={styles.menuText}>Escolher foto</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.menuItem} onPress={terminarSessao}>
-              <Text style={[styles.menuText, { color: "#EF4444" }]}>
-                Terminar sessão
-              </Text>
+          <View style={styles.menu}>
+            <TouchableOpacity style={styles.menuItem} onPress={logout}>
+              <Text style={{ color: "red", fontWeight: "bold" }}>Terminar sessão</Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </Pressable>
       </Modal>
     </View>
   );
 }
 
-/* ===============================
-   ESTILOS
-=============================== */
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
+  container: { flex: 1, backgroundColor: "#fff", paddingTop: 40 },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  topBar: {
     width: "100%",
-    padding: 16,
-    alignItems: "flex-end",
-  },
-  scroll: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 20,
+    paddingHorizontal: 15,
+    marginBottom: 20,
   },
-  foto: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-  },
-  placeholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  userInfo: { flexDirection: "row", alignItems: "center" },
+  avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 10 },
+  avatarPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#6366F1",
     justifyContent: "center",
     alignItems: "center",
+    marginRight: 10,
   },
-  nome: {
-    fontSize: 22,
-    fontWeight: "600",
-    marginTop: 12,
-  },
-  modalOverlay: {
+  nome: { fontSize: 16, fontWeight: "bold" },
+  modalBackground: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.3)",
+    backgroundColor: "rgba(0,0,0,0.2)",
     justifyContent: "flex-start",
     alignItems: "flex-end",
   },
   menu: {
-    marginTop: 60,
-    marginRight: 16,
+    backgroundColor: "#fff",
+    marginTop: 50,
+    marginRight: 10,
     borderRadius: 8,
-    paddingVertical: 8,
-    width: 160,
+    paddingVertical: 10,
+    width: 180,
     shadowColor: "#000",
     shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
+    shadowRadius: 5,
     elevation: 5,
   },
-  menuItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  menuText: {
-    fontSize: 16,
-  },
+  menuItem: { paddingVertical: 12, paddingHorizontal: 15 },
 });

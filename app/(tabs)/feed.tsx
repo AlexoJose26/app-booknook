@@ -8,13 +8,15 @@ import {
   ActivityIndicator,
   Animated,
   Pressable,
+  TextInput,
+  TouchableOpacity,
   Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db } from "@/database/db";
 import { criticas, estantes, livros, usuarios, likes, comentarios } from "@/database/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 
 export default function Feed({ atualizarTrigger }: { atualizarTrigger?: number }) {
   const router = useRouter();
@@ -22,16 +24,29 @@ export default function Feed({ atualizarTrigger }: { atualizarTrigger?: number }
   const [loading, setLoading] = useState(true);
   const [usuarioLogado, setUsuarioLogado] = useState<{ id: string; nome: string; foto?: string } | null>(null);
   const animValues = useRef<Animated.Value[]>([]);
+  const [comentarioTemp, setComentarioTemp] = useState<{ [key: string]: string }>({}); // texto temporário por item
 
   const carregarFeed = async () => {
     setLoading(true);
     try {
-      // Pegar usuário logado
+      // ✅ Usuário logado
       const userStr = await AsyncStorage.getItem("usuarioLogado");
       const user = userStr ? JSON.parse(userStr) : null;
       setUsuarioLogado(user);
 
-      // ===== CRÍTICAS =====
+      // ✅ Usuários e map
+      const usuariosRaw = await db
+        .select({ id: usuarios.id, nome: usuarios.nome, foto: usuarios.foto_perfil })
+        .from(usuarios);
+      const usuariosMap = Object.fromEntries(usuariosRaw.map(u => [u.id, u]));
+
+      // ✅ Livros
+      const livrosRaw = await db
+        .select({ id: livros.id, titulo: livros.titulo, capa: livros.imagem })
+        .from(livros);
+      const livrosMap = Object.fromEntries(livrosRaw.map(l => [l.id, l]));
+
+      // ✅ Criticas
       const criticasRaw = await db
         .select({
           id: criticas.id,
@@ -44,61 +59,64 @@ export default function Feed({ atualizarTrigger }: { atualizarTrigger?: number }
         .from(criticas)
         .orderBy(desc(criticas.createdAt));
 
-      // Mapas de usuários e livros
-      const usuariosMap = Object.fromEntries(
-        (await db.select({ id: usuarios.id, nome: usuarios.nome, foto: usuarios.foto_perfil }).from(usuarios)).map(u => [u.id, u])
-      );
-      const livrosMap = Object.fromEntries(
-        (await db.select({ id: livros.id, titulo: livros.titulo, capa: livros.imagem }).from(livros)).map(l => [l.id, l])
-      );
+      // ✅ Likes
+      const likesRaw = await db.select().from(likes);
+      const likesMap: Record<string, any[]> = {};
+      likesRaw.forEach(l => {
+        if (!likesMap[l.item_id]) likesMap[l.item_id] = [];
+        likesMap[l.item_id].push(l.usuario_id);
+      });
 
+      // ✅ Comentários
+      const comentariosRaw = await db.select().from(comentarios);
+      const comentariosMap: Record<string, any[]> = {};
+      comentariosRaw.forEach(c => {
+        if (!comentariosMap[c.item_id]) comentariosMap[c.item_id] = [];
+        comentariosMap[c.item_id].push(c);
+      });
+
+      // ✅ Criticas com extras
       const criticasComExtras = criticasRaw.map(c => {
-        const likeCount = 0; // Pode puxar likes se quiser
-        const commentCount = 0; // Pode puxar comentários se quiser
-
-        // Escolhe a foto do usuário logado se for ele e não tiver foto
-        let foto = usuariosMap[c.usuarioId]?.foto || "";
-        if (!foto && user && c.usuarioId === user.id) foto = user.foto || "";
-
-        // Nome do usuário
-        let nome = usuariosMap[c.usuarioId]?.nome || "Usuário";
-        if (user && c.usuarioId === user.id) nome = user.nome;
-
+        const usuario = usuariosMap[c.usuarioId];
+        const livro = livrosMap[c.livroId];
         return {
-          ...c,
+          id: c.id,
           tipo: "critica",
-          tituloLivro: livrosMap[c.livroId]?.titulo || "Livro",
-          capaLivro: livrosMap[c.livroId]?.capa || "",
-          usuarioNome: nome,
-          usuarioFoto: foto,
-          likes: likeCount,
-          comentarios: commentCount,
+          tituloLivro: livro?.titulo || "Livro",
+          capaLivro: livro?.capa || "",
+          usuarioNome: usuario?.nome || (user?.id === c.usuarioId ? user.nome : "Usuário"),
+          usuarioFoto: usuario?.foto || (user?.id === c.usuarioId ? user.foto : ""),
+          texto: c.texto,
+          nota: c.nota,
+          data: c.data,
+          likes: likesMap[c.id]?.length || 0,
+          likedByMe: user ? likesMap[c.id]?.includes(user.id) : false,
+          comentarios: comentariosMap[c.id]?.length || 0,
+          comentariosLista: comentariosMap[c.id] || [],
         };
       });
 
-      // ===== ESTANTES =====
+      // ✅ Livros adicionados à estante
       const estantesRaw = await db.select().from(estantes).orderBy(desc(estantes.createdAt));
       const estantesComExtras = estantesRaw.map(e => {
-        let foto = usuariosMap[e.usuario_id]?.foto || "";
-        let nome = usuariosMap[e.usuario_id]?.nome || "Usuário";
-        if (user && e.usuario_id === user.id) {
-          nome = user.nome;
-          foto = user.foto || foto;
-        }
-
+        const usuario = usuariosMap[e.usuario_id];
+        const livro = livrosMap[e.livro_id];
         return {
-          ...e,
+          id: e.id,
           tipo: "estante",
-          tituloLivro: livrosMap[e.livro_id]?.titulo || "Livro",
-          capaLivro: livrosMap[e.livro_id]?.capa || "",
-          usuarioNome: nome,
-          usuarioFoto: foto,
-          likes: 0,
-          comentarios: 0,
+          tituloLivro: livro?.titulo || "Livro",
+          capaLivro: livro?.capa || "",
+          usuarioNome: usuario?.nome || (user?.id === e.usuario_id ? user.nome : "Usuário"),
+          usuarioFoto: usuario?.foto || (user?.id === e.usuario_id ? user.foto : ""),
           data: e.createdAt,
+          likes: likesMap[e.id]?.length || 0,
+          likedByMe: user ? likesMap[e.id]?.includes(user.id) : false,
+          comentarios: comentariosMap[e.id]?.length || 0,
+          comentariosLista: comentariosMap[e.id] || [],
         };
       });
 
+      // ✅ Combinar feed
       const combined = [...criticasComExtras, ...estantesComExtras].sort(
         (a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()
       );
@@ -114,7 +132,6 @@ export default function Feed({ atualizarTrigger }: { atualizarTrigger?: number }
       ).start();
     } catch (e) {
       console.error("Erro ao carregar feed:", e);
-      Alert.alert("Erro", "Não foi possível carregar o feed.");
     } finally {
       setLoading(false);
     }
@@ -123,6 +140,37 @@ export default function Feed({ atualizarTrigger }: { atualizarTrigger?: number }
   useEffect(() => {
     carregarFeed();
   }, [atualizarTrigger]);
+
+  const toggleLike = async (itemId: string) => {
+    if (!usuarioLogado) return;
+    try {
+      const liked = feed.find(f => f.id === itemId)?.likedByMe;
+      if (liked) {
+        await db.delete(likes).where(eq(likes.item_id, itemId)).where(eq(likes.usuario_id, usuarioLogado.id));
+      } else {
+        await db.insert(likes).values({ item_id: itemId, usuario_id: usuarioLogado.id, createdAt: new Date().toISOString() });
+      }
+      carregarFeed();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const postarComentario = async (itemId: string) => {
+    if (!usuarioLogado || !comentarioTemp[itemId]?.trim()) return;
+    try {
+      await db.insert(comentarios).values({
+        item_id: itemId,
+        usuario_id: usuarioLogado.id,
+        texto: comentarioTemp[itemId],
+        createdAt: new Date().toISOString(),
+      });
+      setComentarioTemp(prev => ({ ...prev, [itemId]: "" }));
+      carregarFeed();
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   if (loading) {
     return (
@@ -136,25 +184,17 @@ export default function Feed({ atualizarTrigger }: { atualizarTrigger?: number }
   const renderItem = ({ item, index }: { item: any; index: number }) => {
     const animStyle = {
       opacity: animValues.current[index],
-      transform: [
-        {
-          translateY: animValues.current[index].interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0],
-          }),
-        },
-      ],
+      transform: [{ translateY: animValues.current[index].interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
     };
 
     return (
       <Animated.View style={[styles.card, animStyle]}>
+        {/* Header */}
         <View style={styles.header}>
           {item.usuarioFoto ? (
             <Image source={{ uri: item.usuarioFoto }} style={styles.avatar} />
           ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text>👤</Text>
-            </View>
+            <View style={styles.avatarPlaceholder}><Text>👤</Text></View>
           )}
           <View style={styles.userInfo}>
             <Text style={styles.nome}>{item.usuarioNome}</Text>
@@ -164,6 +204,7 @@ export default function Feed({ atualizarTrigger }: { atualizarTrigger?: number }
           </View>
         </View>
 
+        {/* Livro */}
         <Pressable
           style={styles.livroContainer}
           onPress={() => router.push({ pathname: "/livro", params: { livroId: item.livroId || item.livro_id } })}
@@ -180,46 +221,70 @@ export default function Feed({ atualizarTrigger }: { atualizarTrigger?: number }
           </View>
         </Pressable>
 
-        {item.tipo === "critica" && (
-          <View style={styles.interacoes}>
-            <Text>❤️ {item.likes}</Text>
-            <Text>💬 {item.comentarios}</Text>
-          </View>
-        )}
+        {/* Interações */}
+        <View style={styles.interacoes}>
+          <Pressable onPress={() => toggleLike(item.id)}>
+            <Text style={{ color: item.likedByMe ? "#EF4444" : "#6B7280" }}>❤️ {item.likes}</Text>
+          </Pressable>
+          <Text>💬 {item.comentarios}</Text>
+        </View>
+
+        {/* Comentário rápido */}
+        <View style={styles.comentarioContainer}>
+          <TextInput
+            placeholder="Escreva um comentário…"
+            value={comentarioTemp[item.id] || ""}
+            onChangeText={text => setComentarioTemp(prev => ({ ...prev, [item.id]: text }))}
+            style={styles.inputComentario}
+          />
+          <TouchableOpacity onPress={() => postarComentario(item.id)} style={styles.botaoComentario}>
+            <Text style={{ color: "#FFF" }}>Postar</Text>
+          </TouchableOpacity>
+        </View>
 
         <Text style={styles.data}>{new Date(item.data).toLocaleString()}</Text>
       </Animated.View>
     );
   };
 
-  return <FlatList data={feed} keyExtractor={(i) => `${i.tipo}-${i.id}`} renderItem={renderItem} contentContainerStyle={styles.container} />;
+  return (
+    <FlatList
+      data={feed}
+      keyExtractor={i => `${i.tipo}-${i.id}`}
+      renderItem={renderItem}
+      contentContainerStyle={styles.container}
+    />
+  );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 12, paddingBottom: 24 },
+  container: { padding: 12, paddingBottom: 24, backgroundColor: "#F3F4F6" },
   loading: { flex: 1, justifyContent: "center", alignItems: "center" },
   card: {
     padding: 16,
     borderRadius: 16,
-    marginBottom: 14,
+    marginBottom: 16,
     backgroundColor: "#FFF",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 3,
   },
   header: { flexDirection: "row", alignItems: "center" },
   avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 12 },
   avatarPlaceholder: { width: 50, height: 50, borderRadius: 25, backgroundColor: "#E5E7EB", justifyContent: "center", alignItems: "center", marginRight: 12 },
   userInfo: { flex: 1, justifyContent: "center" },
-  nome: { fontWeight: "bold", fontSize: 17 },
+  nome: { fontWeight: "bold", fontSize: 16 },
   acao: { fontSize: 13, color: "#6B7280", marginTop: 2 },
   livroContainer: { flexDirection: "row", marginTop: 10, gap: 12, alignItems: "center" },
-  capa: { width: 60, height: 90, borderRadius: 8 },
+  capa: { width: 70, height: 100, borderRadius: 8 },
   titulo: { fontSize: 16, fontWeight: "bold" },
   critica: { marginTop: 6, fontStyle: "italic", color: "#374151" },
-  nota: { marginTop: 4, fontWeight: "bold" },
+  nota: { marginTop: 4, fontWeight: "bold", color: "#F59E0B" },
   interacoes: { flexDirection: "row", gap: 16, marginTop: 8, alignItems: "center" },
+  comentarioContainer: { flexDirection: "row", marginTop: 8, alignItems: "center", gap: 8 },
+  inputComentario: { flex: 1, borderWidth: 1, borderColor: "#D1D5DB", borderRadius: 12, padding: 8 },
+  botaoComentario: { backgroundColor: "#3B82F6", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
   data: { fontSize: 12, opacity: 0.5, marginTop: 8 },
 });

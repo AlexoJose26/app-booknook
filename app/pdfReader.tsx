@@ -11,19 +11,21 @@ import {
 import { WebView } from "react-native-webview";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import * as FileSystem from "expo-file-system";
+
+interface PdfReaderProps {
+  pdfUri?: string;
+  titulo?: string;
+}
 
 export default function PdfReader() {
   const router = useRouter();
-  const query = router.query as { pdfUri?: string; titulo?: string };
+  const query = router.query as PdfReaderProps;
 
-  // PDF seguro: decode e fallback
   const pdfUri = query.pdfUri ? decodeURIComponent(query.pdfUri) : null;
   const titulo = query.titulo ?? "PDF";
 
   const [loading, setLoading] = useState(true);
 
-  // Renderiza mensagem de PDF não encontrado
   if (!pdfUri) {
     return (
       <View style={styles.center}>
@@ -35,14 +37,9 @@ export default function PdfReader() {
     );
   }
 
-  // Função para converter URI local ou remota para WebView
+  // Para arquivos locais ou URL remotas
   const getWebViewUri = () => {
-    // Se for URI local do FileSystem
-    if (pdfUri.startsWith("file://")) {
-      return pdfUri;
-    }
-    // Se for URL remota
-    return pdfUri;
+    return pdfUri.startsWith("file://") ? pdfUri : pdfUri;
   };
 
   return (
@@ -57,7 +54,7 @@ export default function PdfReader() {
         </TouchableOpacity>
       </View>
 
-      {/* PDF */}
+      {/* WEBVIEW */}
       <WebView
         source={{ uri: getWebViewUri() }}
         style={{ flex: 1 }}
@@ -77,7 +74,6 @@ export default function PdfReader() {
         bounces={false}
       />
 
-      {/* Loading overlay */}
       {loading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#4F46E5" />

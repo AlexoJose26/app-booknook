@@ -1,3 +1,4 @@
+// app/(tabs)/criticas.tsx
 import React, { useEffect, useState, useRef } from "react";
 import {
   View,
@@ -23,13 +24,13 @@ type CriticaType = {
   usuario_id: string;
   livro_id: string;
   texto: string;
-  nota: number | null;
+  nota: number;
   createdAt: string;
 };
 
 type LivroType = {
   id: string;
-  titulo: string;
+  titulo?: string;
   autor?: string;
   imagem?: string;
 };
@@ -48,12 +49,10 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
   const livroIdParam = typeof params.livroId === "string" ? params.livroId : null;
   const vemDaEstante = params.vemDaEstante === "true";
 
-  const [usuarioId, setUsuarioId] = useState<string | null>(null);
-  const [usuarioNome, setUsuarioNome] = useState<string>("");
+  const [usuario, setUsuario] = useState<{ id: string; nome: string } | null>(null);
   const [livrosData, setLivrosData] = useState<LivroComCritica[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Animations: one Animated.Value per livro
   const animValues = useRef<Animated.Value[]>([]);
 
   useEffect(() => {
@@ -65,25 +64,23 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
           router.replace("/login");
           return;
         }
-
         const user = JSON.parse(userStr);
-        setUsuarioId(user.id);
-        setUsuarioNome(user.nome);
+        setUsuario(user);
 
         let livrosRes: LivroType[] = [];
 
-        if (vemDaEstante) {
+        if (vemDaEstante && user.id) {
           const estanteLivros = await db
             .select({ livro_id: estantes.livro_id })
             .from(estantes)
             .where(eq(estantes.usuario_id, user.id));
 
-          if (estanteLivros.length === 0) {
+          const livroIds = estanteLivros.map((e) => e.livro_id);
+          if (livroIds.length === 0) {
             setLivrosData([]);
             return;
           }
 
-          const livroIds = estanteLivros.map((e) => e.livro_id);
           livrosRes = await db.select().from(livros).where(inArray(livros.id, livroIds));
         } else if (livroIdParam) {
           const res = await db.select().from(livros).where(eq(livros.id, livroIdParam));
@@ -95,8 +92,8 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
           livrosRes = res;
         }
 
-        // Carregar críticas do usuário
         const livroIds = livrosRes.map((l) => l.id);
+
         const criticasRes: CriticaType[] = await db
           .select()
           .from(criticas)
@@ -109,18 +106,16 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
           return {
             ...livro,
             critica: crit,
-            texto: crit?.texto || "",
+            texto: crit?.texto ?? "",
             nota: crit?.nota ?? null,
             editando: !crit,
             salvando: false,
           };
         });
 
-        // Inicializar animações
         animValues.current = livrosComCritica.map(() => new Animated.Value(0));
         setLivrosData(livrosComCritica);
 
-        // Start animations
         Animated.stagger(
           100,
           animValues.current.map((anim) =>
@@ -136,18 +131,14 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
       }
     };
 
-    // Resetar estado para evitar herança de dados
     setLivrosData([]);
     carregarLivros();
-  }, [livroIdParam, vemDaEstante]);
+  }, [livroIdParam, vemDaEstante, router]);
 
-  /** =====================
-   * SALVAR OU ATUALIZAR CRÍTICA
-   ===================== */
   const salvarCritica = async (index: number) => {
     const livroAtual = livrosData[index];
-    if (!usuarioId || !livroAtual.texto.trim() || livroAtual.nota === null) {
-      Alert.alert("Preencha a nota e o comentário antes de salvar.");
+    if (!usuario || !livroAtual.texto.trim() || livroAtual.nota === null) {
+      Alert.alert("Erro", "Preencha a nota e o comentário antes de salvar.");
       return;
     }
 
@@ -161,27 +152,33 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
       let criticaSalva: CriticaType;
 
       if (livroAtual.critica) {
+        // ✅ Atualiza crítica existente
         await db
           .update(criticas)
-          .set({ texto: livroAtual.texto, nota: livroAtual.nota, createdAt: data })
+          .set({
+            texto: livroAtual.texto || "",
+            nota: livroAtual.nota ?? 0,
+            createdAt: data,
+          })
           .where(eq(criticas.id, livroAtual.critica.id));
 
-        criticaSalva = { ...livroAtual.critica, texto: livroAtual.texto, nota: livroAtual.nota, createdAt: data };
+        criticaSalva = { ...livroAtual.critica, texto: livroAtual.texto, nota: livroAtual.nota!, createdAt: data };
       } else {
+        // ✅ Insere nova crítica garantindo campos válidos
         const insertId = await db.insert(criticas).values({
-          usuario_id: usuarioId,
+          usuario_id: usuario.id,
           livro_id: livroAtual.id,
-          texto: livroAtual.texto,
-          nota: livroAtual.nota,
+          texto: livroAtual.texto || "",
+          nota: livroAtual.nota ?? 0,
           createdAt: data,
         });
 
         criticaSalva = {
           id: insertId,
-          usuario_id: usuarioId,
+          usuario_id: usuario.id,
           livro_id: livroAtual.id,
           texto: livroAtual.texto,
-          nota: livroAtual.nota,
+          nota: livroAtual.nota!,
           createdAt: data,
         };
       }
@@ -195,18 +192,17 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
       };
       setLivrosData(updated);
 
+      // Atualiza feed global após publicar
       if (onAtualizarFeed) onAtualizarFeed();
-    } catch (e) {
-      Alert.alert("Erro ao salvar crítica");
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert("Erro", e?.message ? String(e.message) : "Erro ao salvar crítica");
       const updated = [...livrosData];
-      updated[index] = { ...updated[index], salvando: false };
+      updated[index] = { ...livroAtual, salvando: false };
       setLivrosData(updated);
     }
   };
 
-  /** =====================
-   * DELETAR CRÍTICA
-   ===================== */
   const deletarCritica = async (index: number) => {
     const livroAtual = livrosData[index];
     if (!livroAtual.critica) return;
@@ -231,17 +227,15 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
             setLivrosData(updatedLivros);
 
             if (onAtualizarFeed) onAtualizarFeed();
-          } catch {
-            Alert.alert("Erro ao deletar crítica");
+          } catch (e: any) {
+            console.error(e);
+            Alert.alert("Erro", "Falha ao deletar crítica");
           }
         },
       },
     ]);
   };
 
-  /** =====================
-   * RENDER ESTRELAS
-   ===================== */
   const renderEstrelas = (nota: number | null, onPress?: (i: number) => void) => (
     <View style={{ flexDirection: "row" }}>
       {Array.from({ length: 5 }, (_, i) => (
@@ -288,14 +282,21 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
         return (
           <Animated.View key={livro.id} style={[{ marginBottom: 24 }, animStyle]}>
             <View style={styles.cardLivro}>
-              {livro.imagem && <Image source={{ uri: livro.imagem }} style={styles.capa} />}
+              {livro.imagem ? (
+                <Image source={{ uri: livro.imagem }} style={styles.capa} />
+              ) : (
+                <View
+                  style={[styles.capa, { backgroundColor: "#E5E7EB", justifyContent: "center", alignItems: "center" }]}
+                >
+                  <Text>Sem imagem</Text>
+                </View>
+              )}
               <View style={{ flex: 1 }}>
-                <Text style={styles.titulo}>{livro.titulo}</Text>
-                <Text style={styles.autor}>{livro.autor}</Text>
+                <Text style={styles.titulo}>{livro.titulo ?? ""}</Text>
+                <Text style={styles.autor}>{livro.autor ?? ""}</Text>
               </View>
             </View>
 
-            {/* FORMULÁRIO */}
             {livro.editando && (
               <View style={styles.form}>
                 <TextInput
@@ -331,12 +332,11 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
               </View>
             )}
 
-            {/* CRÍTICA PUBLICADA */}
             {!livro.editando && livro.critica && (
               <View style={styles.cardCritica}>
                 {renderEstrelas(livro.critica.nota)}
                 <Text style={[styles.mensagemCritica, { marginTop: 6 }]}>
-                  {usuarioNome} comentou: "{livro.critica.texto}"
+                  {usuario?.nome ?? "Usuário"} comentou: "{livro.critica?.texto ?? ""}"
                 </Text>
 
                 <View style={styles.botaoContainer}>
@@ -347,7 +347,7 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
                       updated[index] = {
                         ...updated[index],
                         editando: true,
-                        texto: updated[index].critica?.texto || "",
+                        texto: updated[index].critica?.texto ?? "",
                         nota: updated[index].critica?.nota ?? null,
                       };
                       setLivrosData(updated);

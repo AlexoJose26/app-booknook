@@ -21,7 +21,7 @@ export default function Splash() {
   const scaleAnim = useRef(new Animated.Value(0.85)).current;
 
   useEffect(() => {
-    // Animação de entrada
+
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -40,10 +40,10 @@ export default function Splash() {
       }),
     ]).start();
 
-    // Redirecionamento automático
+
     const timer = setTimeout(() => {
       router.replace("/login");
-    }, 2500); // tempo total da splash
+    }, 2500);
 
     return () => clearTimeout(timer);
   }, []);

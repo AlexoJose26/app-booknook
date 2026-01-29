@@ -1,29 +1,14 @@
 import { db } from "./db";
-import {
-  criticas,
-  feed,
-  livros,
-  estantes,
-  likes,
-  comentarios,
-  usuarios,
-} from "./schema";
+import { livros, estantes, usuarios, criticas, likes, comentarios, feed } from "./schema";
 import { eq, desc, and } from "drizzle-orm";
 
-/* =======================
-   CRIAR CRÍTICA
-======================= */
-export async function criarCritica(
-  usuario_id: string,
-  livro_id: string,
-  texto: string,
-  nota?: number
-) {
-  const data = new Date().toISOString();
+/* ================= CRÍTICAS ================= */
+export async function criarCritica(usuario_id: string, livro_id: string, texto: string, nota?: number) {
+  const createdAt = new Date().toISOString();
 
   const [nova] = await db
     .insert(criticas)
-    .values({ usuario_id, livro_id, texto, nota, createdAt: data })
+    .values({ usuario_id, livro_id, texto, nota: nota ?? null, createdAt })
     .returning({ id: criticas.id });
 
   const livro = await db
@@ -35,15 +20,12 @@ export async function criarCritica(
     usuario_id,
     acao: "publicou uma crítica",
     livro_titulo: livro[0]?.titulo ?? "Livro",
-    data,
+    data: createdAt,
   });
 
   return nova;
 }
 
-/* =======================
-   LISTAR CRÍTICAS
-======================= */
 export async function listarCriticas(livro_id: string) {
   return db
     .select({
@@ -52,6 +34,7 @@ export async function listarCriticas(livro_id: string) {
       nota: criticas.nota,
       createdAt: criticas.createdAt,
       nome: usuarios.nome,
+      foto_perfil: usuarios.foto_perfil,
     })
     .from(criticas)
     .innerJoin(usuarios, eq(criticas.usuario_id, usuarios.id))
@@ -59,19 +42,12 @@ export async function listarCriticas(livro_id: string) {
     .orderBy(desc(criticas.createdAt));
 }
 
-/* =======================
-   TOGGLE LIKE
-======================= */
+/* ================= LIKES ================= */
 export async function toggleLike(usuario_id: string, critica_id: number) {
   const existente = await db
     .select()
     .from(likes)
-    .where(
-      and(
-        eq(likes.usuario_id, usuario_id),
-        eq(likes.critica_id, critica_id)
-      )
-    );
+    .where(and(eq(likes.usuario_id, usuario_id), eq(likes.critica_id, critica_id)));
 
   if (existente.length) {
     await db.delete(likes).where(eq(likes.id, existente[0].id));
@@ -87,9 +63,6 @@ export async function toggleLike(usuario_id: string, critica_id: number) {
   return true;
 }
 
-/* =======================
-   CONTAR LIKES
-======================= */
 export async function contarLikes(critica_id: number) {
   const res = await db
     .select()
@@ -99,18 +72,12 @@ export async function contarLikes(critica_id: number) {
   return res.length;
 }
 
-/* =======================
-   COMENTÁRIOS
-======================= */
-export async function criarComentario(
-  usuario_id: string,
-  critica_id: number,
-  texto: string
-) {
+/* ================= COMENTÁRIOS ================= */
+export async function criarComentario(usuario_id: string, critica_id: number, texto: string) {
   return db.insert(comentarios).values({
     usuario_id,
     critica_id,
-    texto,
+    texto: texto ?? "",
     createdAt: new Date().toISOString(),
   });
 }
@@ -122,9 +89,10 @@ export async function listarComentarios(critica_id: number) {
       texto: comentarios.texto,
       createdAt: comentarios.createdAt,
       nome: usuarios.nome,
+      foto_perfil: usuarios.foto_perfil,
     })
     .from(comentarios)
     .innerJoin(usuarios, eq(comentarios.usuario_id, usuarios.id))
-    .where(eq(comentarios.critica_id, critica_id))
+    .where(eq(comentarios.critica_id, criticao_id))
     .orderBy(desc(comentarios.createdAt));
 }

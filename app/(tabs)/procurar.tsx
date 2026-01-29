@@ -10,37 +10,20 @@ import {
   Keyboard,
   ActivityIndicator,
   Animated,
+  Alert,
 } from "react-native";
 import { useThemeCustom } from "@/contexts/ThemeContext";
-import { useRouter } from "expo-router";
-import { db } from "@/database/db";
-import {
-  livros as livrosSchema,
-  estantes as estantesSchema,
-  feed as feedSchema,
-} from "@/database/schema";
-
-export type Livro = {
-  id: string;
-  titulo: string;
-  autor: string;
-  descricao?: string;
-  imagem?: string;
-  status?: "Quero Ler" | "A Ler" | "Lidos";
-  pdfUri: string; // agora obrigatoriamente existe
-};
+import { useLivros, Livro } from "@/contexts/LivrosContext";
 
 export default function Procurar() {
   const { theme } = useThemeCustom();
   const isDark = theme === "dark";
-  const router = useRouter();
+  const { adicionarLivro } = useLivros();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [resultados, setResultados] = useState<Livro[]>([]);
   const [loading, setLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  const usuarioLogado = "usuario1"; // Substituir pelo usuário real logado
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -50,126 +33,78 @@ export default function Procurar() {
     }).start();
   }, []);
 
-  /* =======================
-     BUSCAR LIVROS (APENAS COM PDF)
-  ======================== */
   const buscarLivros = async () => {
     Keyboard.dismiss();
-
     if (!searchTerm.trim()) return;
 
     setLoading(true);
-
     try {
-      const response = await fetch(
+      const res = await fetch(
         `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(
           searchTerm
-        )}&maxResults=20`
+        )}&maxResults=40`
       );
 
-      if (!response.ok) throw new Error("Erro na busca");
+      const data = await res.json();
 
-      const data = await response.json();
-
-      if (!data.items || data.items.length === 0) {
-        setResultados([]);
-        return;
-      }
-
-      // Filtrar apenas livros com PDF
-      const livrosPDF: Livro[] = data.items
+      const livrosAPI: Livro[] = (data.items ?? [])
         .map((item: any) => {
-          const pdfUri = item.accessInfo?.pdf?.downloadLink;
-          if (!pdfUri) return null;
+          const info = item.volumeInfo ?? {};
+          const pdfLink = item.accessInfo?.pdf?.downloadLink;
+
+          if (!pdfLink) return null;
+
           return {
-            id: item.id,
-            titulo: item.volumeInfo.title ?? "Sem título",
-            autor: item.volumeInfo.authors?.join(", ") ?? "Desconhecido",
-            descricao: item.volumeInfo.description ?? "",
-            imagem: item.volumeInfo.imageLinks?.thumbnail,
-            pdfUri,
+            id: String(item.id),
+            titulo: info.title ?? "Sem título",
+            autor: info.authors?.join(", ") ?? "Desconhecido",
+            descricao: info.description ?? "",
+            imagem: info.imageLinks?.thumbnail ?? "",
+            pdfUri: pdfLink,
           };
         })
-        .filter((l: Livro | null): l is Livro => l !== null);
+        .filter(Boolean);
 
-      setResultados(livrosPDF);
-
-      // Salvar livros no banco local
-      for (const livro of livrosPDF) {
-        try {
-          await db.insert(livrosSchema).values({
-            id: livro.id,
-            titulo: livro.titulo,
-            autor: livro.autor,
-            descricao: livro.descricao,
-            imagem: livro.imagem ?? "",
-            pdfUri: livro.pdfUri,
-          });
-        } catch {
-          // ignora duplicados
-        }
-      }
+      setResultados(livrosAPI);
     } catch (err) {
-      console.error(err);
+      Alert.alert("Erro", "Falha ao buscar livros.");
     } finally {
       setLoading(false);
     }
   };
 
-  /* =======================
-     ADICIONAR AO FEED
-  ======================== */
-  const adicionarAoFeed = async (livro: Livro, acao: string) => {
+  const handleQueroLer = async (livro: Livro) => {
     try {
-      await db.insert(feedSchema).values({
-        usuario_id: usuarioLogado,
-        acao,
-        livro_titulo: livro.titulo,
-        data: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error("Erro ao adicionar livro:", err);
-    }
-  };
+      // Garantir todos os campos como string
+      const livroSeguro: Livro = {
+        id: String(livro.id),
+        titulo: livro.titulo ?? "",
+        autor: livro.autor ?? "",
+        descricao: livro.descricao ?? "",
+        imagem: livro.imagem ?? "",
+        pdfUri: livro.pdfUri ?? "",
+      };
 
-  /* =======================
-     ADICIONAR À ESTANTE
-  ======================== */
-  const adicionarEstante = async (
-    livro: Livro,
-    status: "Quero Ler" | "A Ler" | "Lidos"
-  ) => {
-    try {
-      await db.insert(estantesSchema).values({
-        usuario_id: usuarioLogado,
-        livro_id: livro.id,
-        status,
-        createdAt: new Date().toISOString(),
-      });
+      await adicionarLivro(livroSeguro, "queroLer");
 
       setResultados((prev) =>
-        prev.map((l) => (l.id === livro.id ? { ...l, status } : l))
+        prev.map((l) =>
+          l.id === livro.id ? { ...l, status: "queroLer" } : l
+        )
       );
 
-      await adicionarAoFeed(livro, `adicionou o livro à estante "${status}"`);
-
-      router.replace("/estantes"); // redireciona automaticamente
+      Alert.alert("Sucesso", `"${livro.titulo}" adicionado à estante`);
     } catch (err) {
-      console.error(err);
+      console.error("Erro ao adicionar livro:", err);
+      Alert.alert("Erro", "Não foi possível adicionar o livro.");
     }
   };
 
-  /* =======================
-     RENDER ITEM
-  ======================== */
   const renderLivro = ({ item }: { item: Livro }) => (
     <Animated.View
       style={[
         styles.card,
-        {
-          opacity: fadeAnim,
-          backgroundColor: isDark ? "#1F2937" : "#FFFFFF",
-        },
+        { opacity: fadeAnim, backgroundColor: isDark ? "#1F2937" : "#FFF" },
       ]}
     >
       {item.imagem ? (
@@ -185,14 +120,11 @@ export default function Procurar() {
           {item.titulo}
         </Text>
         <Text style={styles.autor}>{item.autor}</Text>
-        <Text numberOfLines={3} style={styles.desc}>
-          {item.descricao}
-        </Text>
 
         {!item.status && (
           <TouchableOpacity
             style={styles.btn}
-            onPress={() => adicionarEstante(item, "Quero Ler")}
+            onPress={() => handleQueroLer(item)}
           >
             <Text style={styles.btnText}>Quero Ler</Text>
           </TouchableOpacity>
@@ -201,9 +133,6 @@ export default function Procurar() {
     </Animated.View>
   );
 
-  /* =======================
-     UI PRINCIPAL
-  ======================== */
   return (
     <View style={styles.container}>
       <Text style={styles.tituloPagina}>Procurar Livros</Text>
@@ -213,14 +142,7 @@ export default function Procurar() {
           placeholder="Pesquisar livro..."
           value={searchTerm}
           onChangeText={setSearchTerm}
-          onSubmitEditing={buscarLivros}
-          style={[
-            styles.input,
-            {
-              backgroundColor: isDark ? "#374151" : "#FFF",
-              color: isDark ? "#FFF" : "#000",
-            },
-          ]}
+          style={styles.input}
         />
         <TouchableOpacity style={styles.btnBuscar} onPress={buscarLivros}>
           <Text style={styles.btnText}>Buscar</Text>
@@ -233,52 +155,23 @@ export default function Procurar() {
         data={resultados}
         keyExtractor={(item) => item.id}
         renderItem={renderLivro}
-        contentContainerStyle={{ paddingBottom: 20 }}
       />
     </View>
   );
 }
 
-/* =======================
-   STYLES
-======================= */
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
   tituloPagina: { fontSize: 24, fontWeight: "bold", marginBottom: 12 },
   searchBox: { flexDirection: "row", marginBottom: 12 },
-  input: { flex: 1, padding: 12, borderRadius: 8 },
-  btnBuscar: {
-    backgroundColor: "#4F46E5",
-    padding: 12,
-    marginLeft: 8,
-    borderRadius: 8,
-  },
-  btnText: { color: "#FFF", fontWeight: "bold", fontSize: 12 },
-  card: {
-    flexDirection: "row",
-    padding: 12,
-    borderRadius: 14,
-    marginBottom: 10,
-  },
+  input: { flex: 1, padding: 12, borderRadius: 8, backgroundColor: "#FFF" },
+  btnBuscar: { backgroundColor: "#4F46E5", padding: 12, marginLeft: 8, borderRadius: 8 },
+  btnText: { color: "#FFF", fontWeight: "bold" },
+  card: { flexDirection: "row", padding: 12, borderRadius: 14, marginBottom: 10 },
   thumb: { width: 80, height: 120, borderRadius: 8, marginRight: 10 },
-  thumbPlaceholder: {
-    width: 80,
-    height: 120,
-    backgroundColor: "#E5E7EB",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
+  thumbPlaceholder: { width: 80, height: 120, justifyContent: "center", alignItems: "center" },
   info: { flex: 1 },
   titulo: { fontSize: 16, fontWeight: "bold" },
   autor: { fontSize: 13, color: "#6B7280" },
-  desc: { fontSize: 12, marginTop: 4 },
-  btn: {
-    backgroundColor: "#4F46E5",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignSelf: "flex-start",
-    marginTop: 8,
-  },
+  btn: { marginTop: 8, backgroundColor: "#4F46E5", padding: 8, borderRadius: 8 },
 });
