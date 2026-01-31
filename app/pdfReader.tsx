@@ -37,7 +37,7 @@ export default function PdfReader() {
     );
   }
 
-  // Para arquivos locais ou URL remotas
+  
   const getWebViewUri = () => {
     return pdfUri.startsWith("file://") ? pdfUri : pdfUri;
   };
@@ -54,7 +54,7 @@ export default function PdfReader() {
         </TouchableOpacity>
       </View>
 
-      {/* WEBVIEW */}
+
       <WebView
         source={{ uri: getWebViewUri() }}
         style={{ flex: 1 }}

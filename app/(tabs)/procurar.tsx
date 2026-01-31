@@ -11,6 +11,9 @@ import {
   ActivityIndicator,
   Animated,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
 } from "react-native";
 import { useThemeCustom } from "@/contexts/ThemeContext";
 import { useLivros, Livro } from "@/contexts/LivrosContext";
@@ -28,7 +31,7 @@ export default function Procurar() {
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
-      duration: 400,
+      duration: 300,
       useNativeDriver: true,
     }).start();
   }, []);
@@ -42,16 +45,14 @@ export default function Procurar() {
       const res = await fetch(
         `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(
           searchTerm
-        )}&maxResults=40`
+        )}&maxResults=30`
       );
-
       const data = await res.json();
 
       const livrosAPI: Livro[] = (data.items ?? [])
         .map((item: any) => {
           const info = item.volumeInfo ?? {};
           const pdfLink = item.accessInfo?.pdf?.downloadLink;
-
           if (!pdfLink) return null;
 
           return {
@@ -61,12 +62,14 @@ export default function Procurar() {
             descricao: info.description ?? "",
             imagem: info.imageLinks?.thumbnail ?? "",
             pdfUri: pdfLink,
+            status: undefined,
           };
         })
         .filter(Boolean);
 
       setResultados(livrosAPI);
     } catch (err) {
+      console.error(err);
       Alert.alert("Erro", "Falha ao buscar livros.");
     } finally {
       setLoading(false);
@@ -75,27 +78,16 @@ export default function Procurar() {
 
   const handleQueroLer = async (livro: Livro) => {
     try {
-      // Garantir todos os campos como string
-      const livroSeguro: Livro = {
-        id: String(livro.id),
-        titulo: livro.titulo ?? "",
-        autor: livro.autor ?? "",
-        descricao: livro.descricao ?? "",
-        imagem: livro.imagem ?? "",
-        pdfUri: livro.pdfUri ?? "",
-      };
+      await adicionarLivro(livro, "queroLer");
 
-      await adicionarLivro(livroSeguro, "queroLer");
-
+      // Atualiza status localmente para feedback instantâneo
       setResultados((prev) =>
-        prev.map((l) =>
-          l.id === livro.id ? { ...l, status: "queroLer" } : l
-        )
+        prev.map((l) => (l.id === livro.id ? { ...l, status: "queroLer" } : l))
       );
 
-      Alert.alert("Sucesso", `"${livro.titulo}" adicionado à estante`);
+      Alert.alert("Sucesso", `"${livro.titulo}" foi adicionado à sua estante.`);
     } catch (err) {
-      console.error("Erro ao adicionar livro:", err);
+      console.error(err);
       Alert.alert("Erro", "Não foi possível adicionar o livro.");
     }
   };
@@ -111,67 +103,86 @@ export default function Procurar() {
         <Image source={{ uri: item.imagem }} style={styles.thumb} />
       ) : (
         <View style={styles.thumbPlaceholder}>
-          <Text>Sem imagem</Text>
+          <Text>📘</Text>
         </View>
       )}
 
       <View style={styles.info}>
-        <Text style={[styles.titulo, { color: isDark ? "#FFF" : "#000" }]}>
+        <Text style={[styles.titulo, { color: isDark ? "#FFF" : "#111827" }]}>
           {item.titulo}
         </Text>
         <Text style={styles.autor}>{item.autor}</Text>
 
-        {!item.status && (
+        {!item.status ? (
           <TouchableOpacity
-            style={styles.btn}
+            style={styles.btnQuero}
             onPress={() => handleQueroLer(item)}
           >
-            <Text style={styles.btnText}>Quero Ler</Text>
+            <Text style={styles.btnQueroText}>Quero ler</Text>
           </TouchableOpacity>
+        ) : (
+          <View style={styles.tagAdicionado}>
+            <Text style={styles.tagTexto}>Na estante</Text>
+          </View>
         )}
       </View>
     </Animated.View>
   );
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.tituloPagina}>Procurar Livros</Text>
+    <SafeAreaView style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <View style={styles.container}>
+          <Text style={[styles.tituloPagina, { color: isDark ? "#FFF" : "#111827" }]}>
+            Procurar livros
+          </Text>
 
-      <View style={styles.searchBox}>
-        <TextInput
-          placeholder="Pesquisar livro..."
-          value={searchTerm}
-          onChangeText={setSearchTerm}
-          style={styles.input}
-        />
-        <TouchableOpacity style={styles.btnBuscar} onPress={buscarLivros}>
-          <Text style={styles.btnText}>Buscar</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.searchBox}>
+            <TextInput
+              placeholder="Título, autor ou palavra-chave"
+              value={searchTerm}
+              onChangeText={setSearchTerm}
+              style={[styles.input, { backgroundColor: isDark ? "#374151" : "#F3F4F6", color: isDark ? "#FFF" : "#111827" }]}
+              placeholderTextColor={isDark ? "#9CA3AF" : "#9CA3AF"}
+            />
+            <TouchableOpacity style={styles.btnBuscar} onPress={buscarLivros}>
+              <Text style={styles.btnBuscarText}>Buscar</Text>
+            </TouchableOpacity>
+          </View>
 
-      {loading && <ActivityIndicator size="large" />}
+          {loading && <ActivityIndicator size="large" style={{ marginTop: 20 }} />}
 
-      <FlatList
-        data={resultados}
-        keyExtractor={(item) => item.id}
-        renderItem={renderLivro}
-      />
-    </View>
+          <FlatList
+            data={resultados}
+            keyExtractor={(item) => item.id}
+            renderItem={renderLivro}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          />
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  tituloPagina: { fontSize: 24, fontWeight: "bold", marginBottom: 12 },
-  searchBox: { flexDirection: "row", marginBottom: 12 },
-  input: { flex: 1, padding: 12, borderRadius: 8, backgroundColor: "#FFF" },
-  btnBuscar: { backgroundColor: "#4F46E5", padding: 12, marginLeft: 8, borderRadius: 8 },
-  btnText: { color: "#FFF", fontWeight: "bold" },
-  card: { flexDirection: "row", padding: 12, borderRadius: 14, marginBottom: 10 },
-  thumb: { width: 80, height: 120, borderRadius: 8, marginRight: 10 },
-  thumbPlaceholder: { width: 80, height: 120, justifyContent: "center", alignItems: "center" },
-  info: { flex: 1 },
-  titulo: { fontSize: 16, fontWeight: "bold" },
-  autor: { fontSize: 13, color: "#6B7280" },
-  btn: { marginTop: 8, backgroundColor: "#4F46E5", padding: 8, borderRadius: 8 },
+  tituloPagina: { fontSize: 26, fontWeight: "700", marginBottom: 14 },
+  searchBox: { flexDirection: "row", marginBottom: 14 },
+  input: { flex: 1, padding: 14, borderRadius: 14, fontSize: 15 },
+  btnBuscar: { marginLeft: 8, backgroundColor: "#4F46E5", paddingHorizontal: 18, borderRadius: 14, justifyContent: "center" },
+  btnBuscarText: { color: "#FFF", fontWeight: "600" },
+  card: { flexDirection: "row", padding: 14, borderRadius: 18, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  thumb: { width: 72, height: 108, borderRadius: 10, marginRight: 12 },
+  thumbPlaceholder: { width: 72, height: 108, borderRadius: 10, backgroundColor: "#E5E7EB", justifyContent: "center", alignItems: "center", marginRight: 12 },
+  info: { flex: 1, justifyContent: "space-between" },
+  titulo: { fontSize: 16, fontWeight: "700" },
+  autor: { fontSize: 13, color: "#6B7280", marginTop: 2 },
+  btnQuero: { alignSelf: "flex-start", marginTop: 8, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, backgroundColor: "#EEF2FF" },
+  btnQueroText: { color: "#4338CA", fontSize: 13, fontWeight: "600" },
+  tagAdicionado: { alignSelf: "flex-start", marginTop: 8, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999, backgroundColor: "#DCFCE7" },
+  tagTexto: { fontSize: 12, fontWeight: "600", color: "#166534" },
 });

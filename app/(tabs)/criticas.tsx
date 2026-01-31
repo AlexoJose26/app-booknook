@@ -1,4 +1,3 @@
-// app/(tabs)/criticas.tsx
 import React, { useEffect, useState, useRef } from "react";
 import {
   View,
@@ -17,7 +16,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { eq, desc, inArray } from "drizzle-orm";
 
 import { db } from "@/database/db";
-import { criticas, livros, estantes } from "@/database/schema";
+import { criticas, livros, estantes, curtidas, comentarios } from "@/database/schema";
 
 type CriticaType = {
   id: number;
@@ -41,6 +40,9 @@ type LivroComCritica = LivroType & {
   nota: number | null;
   editando: boolean;
   salvando: boolean;
+  curtidasCount?: number;
+  curtidoPorMim?: boolean;
+  comentarios?: any[];
 };
 
 export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => void }) {
@@ -101,17 +103,36 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
           .where(inArray(criticas.livro_id, livroIds))
           .orderBy(desc(criticas.createdAt));
 
-        const livrosComCritica: LivroComCritica[] = livrosRes.map((livro) => {
-          const crit = criticasRes.find((c) => c.livro_id === livro.id);
-          return {
-            ...livro,
-            critica: crit,
-            texto: crit?.texto ?? "",
-            nota: crit?.nota ?? null,
-            editando: !crit,
-            salvando: false,
-          };
-        });
+        const livrosComCritica: LivroComCritica[] = await Promise.all(
+          livrosRes.map(async (livro) => {
+            const crit = criticasRes.find((c) => c.livro_id === livro.id);
+
+            // Curtidas e comentários
+            let curtidasCount = 0;
+            let curtidoPorMim = false;
+            let comentariosRes: any[] = [];
+
+            if (crit) {
+              const curtidasRaw = await db.select().from(curtidas).where(curtidas.critica_id.eq(crit.id));
+              curtidasCount = curtidasRaw.length;
+              curtidoPorMim = curtidasRaw.some((c) => c.usuario_id === user.id);
+
+              comentariosRes = await db.select().from(comentarios).where(comentarios.critica_id.eq(crit.id));
+            }
+
+            return {
+              ...livro,
+              critica: crit,
+              texto: crit?.texto ?? "",
+              nota: crit?.nota ?? null,
+              editando: !crit,
+              salvando: false,
+              curtidasCount,
+              curtidoPorMim,
+              comentarios: comentariosRes,
+            };
+          })
+        );
 
         animValues.current = livrosComCritica.map(() => new Animated.Value(0));
         setLivrosData(livrosComCritica);
@@ -152,24 +173,18 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
       let criticaSalva: CriticaType;
 
       if (livroAtual.critica) {
-        // ✅ Atualiza crítica existente
         await db
           .update(criticas)
-          .set({
-            texto: livroAtual.texto || "",
-            nota: livroAtual.nota ?? 0,
-            createdAt: data,
-          })
+          .set({ texto: livroAtual.texto, nota: livroAtual.nota!, createdAt: data })
           .where(eq(criticas.id, livroAtual.critica.id));
 
         criticaSalva = { ...livroAtual.critica, texto: livroAtual.texto, nota: livroAtual.nota!, createdAt: data };
       } else {
-        // ✅ Insere nova crítica garantindo campos válidos
         const insertId = await db.insert(criticas).values({
           usuario_id: usuario.id,
           livro_id: livroAtual.id,
-          texto: livroAtual.texto || "",
-          nota: livroAtual.nota ?? 0,
+          texto: livroAtual.texto,
+          nota: livroAtual.nota!,
           createdAt: data,
         });
 
@@ -184,19 +199,13 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
       }
 
       const updated = [...livrosData];
-      updated[index] = {
-        ...updated[index],
-        critica: criticaSalva,
-        editando: false,
-        salvando: false,
-      };
+      updated[index] = { ...updated[index], critica: criticaSalva, editando: false, salvando: false };
       setLivrosData(updated);
 
-      // Atualiza feed global após publicar
       if (onAtualizarFeed) onAtualizarFeed();
     } catch (e: any) {
       console.error(e);
-      Alert.alert("Erro", e?.message ? String(e.message) : "Erro ao salvar crítica");
+      Alert.alert("Erro", e?.message ?? "Erro ao salvar crítica");
       const updated = [...livrosData];
       updated[index] = { ...livroAtual, salvando: false };
       setLivrosData(updated);
@@ -270,12 +279,7 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
         const animStyle = {
           opacity: animValues.current[index],
           transform: [
-            {
-              translateY: animValues.current[index].interpolate({
-                inputRange: [0, 1],
-                outputRange: [20, 0],
-              }),
-            },
+            { translateY: animValues.current[index].interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) },
           ],
         };
 
@@ -285,9 +289,7 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
               {livro.imagem ? (
                 <Image source={{ uri: livro.imagem }} style={styles.capa} />
               ) : (
-                <View
-                  style={[styles.capa, { backgroundColor: "#E5E7EB", justifyContent: "center", alignItems: "center" }]}
-                >
+                <View style={[styles.capa, { backgroundColor: "#E5E7EB", justifyContent: "center", alignItems: "center" }]}>
                   <Text>Sem imagem</Text>
                 </View>
               )}
@@ -320,14 +322,8 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
                   })}
                 </View>
 
-                <TouchableOpacity
-                  style={[styles.botao, { backgroundColor: "#10B981" }]}
-                  onPress={() => salvarCritica(index)}
-                  disabled={livro.salvando}
-                >
-                  <Text style={styles.botaoTexto}>
-                    {livro.critica ? "Atualizar crítica" : "Publicar crítica"}
-                  </Text>
+                <TouchableOpacity style={[styles.botao, { backgroundColor: "#10B981" }]} onPress={() => salvarCritica(index)} disabled={livro.salvando}>
+                  <Text style={styles.botaoTexto}>{livro.critica ? "Atualizar crítica" : "Publicar crítica"}</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -338,28 +334,23 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
                 <Text style={[styles.mensagemCritica, { marginTop: 6 }]}>
                   {usuario?.nome ?? "Usuário"} comentou: "{livro.critica?.texto ?? ""}"
                 </Text>
+                <Text style={{ marginTop: 4 }}>❤️ {livro.curtidasCount ?? 0} | 💬 {livro.comentarios?.length ?? 0}</Text>
 
                 <View style={styles.botaoContainer}>
-                  <TouchableOpacity
-                    style={[styles.botao, { backgroundColor: "#3B82F6" }]}
-                    onPress={() => {
-                      const updated = [...livrosData];
-                      updated[index] = {
-                        ...updated[index],
-                        editando: true,
-                        texto: updated[index].critica?.texto ?? "",
-                        nota: updated[index].critica?.nota ?? null,
-                      };
-                      setLivrosData(updated);
-                    }}
-                  >
+                  <TouchableOpacity style={[styles.botao, { backgroundColor: "#3B82F6" }]} onPress={() => {
+                    const updated = [...livrosData];
+                    updated[index] = {
+                      ...updated[index],
+                      editando: true,
+                      texto: updated[index].critica?.texto ?? "",
+                      nota: updated[index].critica?.nota ?? null,
+                    };
+                    setLivrosData(updated);
+                  }}>
                     <Text style={styles.botaoTexto}>Atualizar</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={[styles.botao, { backgroundColor: "#EF4444" }]}
-                    onPress={() => deletarCritica(index)}
-                  >
+                  <TouchableOpacity style={[styles.botao, { backgroundColor: "#EF4444" }]} onPress={() => deletarCritica(index)}>
                     <Text style={styles.botaoTexto}>Deletar</Text>
                   </TouchableOpacity>
                 </View>
@@ -376,54 +367,15 @@ const styles = StyleSheet.create({
   container: { padding: 16, paddingBottom: 40 },
   loading: { flex: 1, justifyContent: "center", alignItems: "center" },
   voltar: { color: "#1877F2", marginBottom: 10, fontWeight: "600" },
-  cardLivro: {
-    flexDirection: "row",
-    backgroundColor: "#FFF",
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 12,
-    alignItems: "center",
-  },
+  cardLivro: { flexDirection: "row", backgroundColor: "#FFF", padding: 12, borderRadius: 12, marginBottom: 12, alignItems: "center" },
   capa: { width: 80, height: 120, marginRight: 12, borderRadius: 8 },
   titulo: { fontSize: 18, fontWeight: "bold", marginBottom: 2 },
   autor: { color: "#6B7280", fontSize: 14 },
-  form: {
-    backgroundColor: "#FFF",
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  textarea: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    minHeight: 100,
-    marginBottom: 12,
-    borderColor: "#E5E7EB",
-    fontSize: 15,
-  },
+  form: { backgroundColor: "#FFF", padding: 16, borderRadius: 14, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
+  textarea: { borderWidth: 1, borderRadius: 12, padding: 14, minHeight: 100, marginBottom: 12, borderColor: "#E5E7EB", fontSize: 15 },
   botaoContainer: { flexDirection: "row", gap: 12, marginTop: 12 },
-  botao: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  botao: { flex: 1, padding: 14, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   botaoTexto: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
-  cardCritica: {
-    backgroundColor: "#FFF",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
-  },
+  cardCritica: { backgroundColor: "#FFF", padding: 16, borderRadius: 12, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 6, elevation: 2 },
   mensagemCritica: { fontSize: 15, fontStyle: "italic", color: "#374151" },
 });

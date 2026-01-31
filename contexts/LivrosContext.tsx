@@ -1,8 +1,15 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  ReactNode,
+  useEffect,
+} from "react";
 import { Alert } from "react-native";
 import { db } from "@/database/db";
 import { livros, estantes } from "@/database/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { useUsuario } from "./UserContext";
 
 export type Livro = {
   id: string;
@@ -23,27 +30,36 @@ type EstantesState = {
 
 type LivrosContextType = {
   estantes: EstantesState;
-  adicionarLivro: (livro: Livro, status: Livro["status"]) => Promise<void>;
-  atualizarStatus: (livroId: string, novoStatus: Livro["status"]) => Promise<void>;
+  adicionarLivro: (
+    livro: Livro,
+    status: Livro["status"]
+  ) => Promise<void>;
+  atualizarStatus: (
+    livroId: string,
+    novoStatus: Livro["status"]
+  ) => Promise<void>;
   carregarEstantes: () => Promise<void>;
 };
 
-const LivrosContext = createContext<LivrosContextType | undefined>(undefined);
-
-// Usuário de teste
-const USUARIO_ID = "1";
+const LivrosContext = createContext<LivrosContextType | undefined>(
+  undefined
+);
 
 export const LivrosProvider = ({ children }: { children: ReactNode }) => {
+  const { usuario } = useUsuario();
+
   const [estantesState, setEstantesState] = useState<EstantesState>({
     lendo: [],
     queroLer: [],
     lido: [],
   });
 
-  // Carregar livros do banco
+  // 🔄 carregar estantes do usuário
   const carregarEstantes = async () => {
+    if (!usuario) return;
+
     try {
-      const todasEstantes = await db
+      const resultado = await db
         .select({
           status: estantes.status,
           livroId: estantes.livro_id,
@@ -56,11 +72,15 @@ export const LivrosProvider = ({ children }: { children: ReactNode }) => {
         })
         .from(estantes)
         .innerJoin(livros, eq(estantes.livro_id, livros.id))
-        .where(eq(estantes.usuario_id, USUARIO_ID));
+        .where(eq(estantes.usuario_id, usuario.id));
 
-      const novoState: EstantesState = { lendo: [], queroLer: [], lido: [] };
+      const novoState: EstantesState = {
+        lendo: [],
+        queroLer: [],
+        lido: [],
+      };
 
-      todasEstantes.forEach((item) => {
+      resultado.forEach((item) => {
         const livro: Livro = {
           id: item.livroId,
           titulo: item.titulo,
@@ -71,6 +91,7 @@ export const LivrosProvider = ({ children }: { children: ReactNode }) => {
           status: item.status as Livro["status"],
           createdAt: item.createdAt,
         };
+
         if (livro.status) {
           novoState[livro.status].push(livro);
         }
@@ -84,21 +105,28 @@ export const LivrosProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     carregarEstantes();
-  }, []);
+  }, [usuario]);
 
-  const adicionarLivro = async (livro: Livro, status: Livro["status"]) => {
-    if (!status || !["lendo", "queroLer", "lido"].includes(status)) return;
+  // ➕ adicionar livro
+  const adicionarLivro = async (
+    livro: Livro,
+    status: Livro["status"]
+  ) => {
+    if (!usuario || !status) return;
 
-    const idReal = livro.id ?? String(Date.now());
+    const livroId = livro.id ?? String(Date.now());
     const createdAt = new Date().toISOString();
 
     try {
-      const livroExistente = await db.select().from(livros).where(eq(livros.id, idReal));
+      const existente = await db
+        .select()
+        .from(livros)
+        .where(eq(livros.id, livroId));
 
-      if (livroExistente.length === 0) {
+      if (existente.length === 0) {
         await db.insert(livros).values({
-          id: idReal,
-          titulo: livro.titulo ?? "",
+          id: livroId,
+          titulo: livro.titulo,
           autor: livro.autor ?? "",
           descricao: livro.descricao ?? "",
           imagem: livro.imagem ?? "",
@@ -107,57 +135,87 @@ export const LivrosProvider = ({ children }: { children: ReactNode }) => {
       }
 
       await db.insert(estantes).values({
-        usuario_id: USUARIO_ID,
-        livro_id: idReal,
+        usuario_id: usuario.id,
+        livro_id: livroId,
         status,
         createdAt,
       });
 
       setEstantesState((prev) => ({
         ...prev,
-        [status]: [...prev[status], { ...livro, id: idReal, status, createdAt }],
+        [status]: [
+          ...prev[status],
+          { ...livro, id: livroId, status, createdAt },
+        ],
       }));
     } catch (err) {
       console.error("Erro ao adicionar livro:", err);
-      Alert.alert("Erro", "Não foi possível adicionar o livro à estante.");
+      Alert.alert("Erro", "Não foi possível adicionar o livro.");
     }
   };
 
-  const atualizarStatus = async (livroId: string, novoStatus: Livro["status"]) => {
-    if (!novoStatus) return;
+  // 🔁 atualizar status
+  const atualizarStatus = async (
+    livroId: string,
+    novoStatus: Livro["status"]
+  ) => {
+    if (!usuario || !novoStatus) return;
 
     try {
-      await db.update(estantes).set({ status: novoStatus }).where(eq(estantes.livro_id, livroId));
+      await db
+        .update(estantes)
+        .set({ status: novoStatus })
+        .where(
+          and(
+            eq(estantes.usuario_id, usuario.id),
+            eq(estantes.livro_id, livroId)
+          )
+        );
 
       setEstantesState((prev) => {
-        const categorias: (keyof EstantesState)[] = ["lendo", "queroLer", "lido"];
-        let livroAtual: Livro | undefined;
-        const novoState: EstantesState = { lendo: [], queroLer: [], lido: [] };
+        const novoState: EstantesState = {
+          lendo: [],
+          queroLer: [],
+          lido: [],
+        };
 
-        categorias.forEach((cat) => {
-          const filtrados = prev[cat].filter((l) => {
-            if (l.id === livroId) {
-              livroAtual = { ...l, status: novoStatus };
-              return false;
-            }
-            return true;
-          });
-          novoState[cat] = filtrados;
-        });
+        let livroMovido: Livro | null = null;
 
-        if (livroAtual) novoState[novoStatus] = [...novoState[novoStatus], livroAtual];
+        (Object.keys(prev) as (keyof EstantesState)[]).forEach(
+          (cat) => {
+            prev[cat].forEach((livro) => {
+              if (livro.id === livroId) {
+                livroMovido = {
+                  ...livro,
+                  status: novoStatus,
+                };
+              } else {
+                novoState[cat].push(livro);
+              }
+            });
+          }
+        );
+
+        if (livroMovido) {
+          novoState[novoStatus].push(livroMovido);
+        }
 
         return novoState;
       });
     } catch (err) {
       console.error("Erro ao atualizar status:", err);
-      Alert.alert("Erro", "Não foi possível atualizar o status do livro.");
+      Alert.alert("Erro", "Não foi possível atualizar o status.");
     }
   };
 
   return (
     <LivrosContext.Provider
-      value={{ estantes: estantesState, adicionarLivro, atualizarStatus, carregarEstantes }}
+      value={{
+        estantes: estantesState,
+        adicionarLivro,
+        atualizarStatus,
+        carregarEstantes,
+      }}
     >
       {children}
     </LivrosContext.Provider>
@@ -166,6 +224,8 @@ export const LivrosProvider = ({ children }: { children: ReactNode }) => {
 
 export const useLivros = () => {
   const context = useContext(LivrosContext);
-  if (!context) throw new Error("useLivros deve ser usado dentro de LivrosProvider");
+  if (!context) {
+    throw new Error("useLivros deve ser usado dentro de LivrosProvider");
+  }
   return context;
 };

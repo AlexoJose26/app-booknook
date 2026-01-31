@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,13 +9,16 @@ import {
   SafeAreaView,
   Modal,
   Button,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
 import { useLivros, Livro } from "@/contexts/LivrosContext";
 import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const STATUS_LABEL = { lendo: "A Ler", queroLer: "Quero Ler", lido: "Lidos" };
+
 const STATUS_META = {
   lendo: { cor: "#DBEAFE", icon: "book", texto: "#1E40AF" },
   queroLer: { cor: "#EDE9FE", icon: "star", texto: "#5B21B6" },
@@ -25,27 +28,44 @@ const STATUS_META = {
 export default function Estantes() {
   const { estantes, atualizarStatus } = useLivros();
   const [livroAtivo, setLivroAtivo] = useState<Livro | null>(null);
+  const [usuario, setUsuario] = useState<{ id: string; nome: string } | null>(null);
   const router = useRouter();
 
+  useEffect(() => {
+    const carregarUsuario = async () => {
+      const userStr = await AsyncStorage.getItem("usuarioLogado");
+      if (!userStr) return router.replace("/login");
+      setUsuario(JSON.parse(userStr));
+    };
+    carregarUsuario();
+  }, [router]);
+
   const sections = Object.entries(estantes ?? {})
-    .map(([key, data]) => ({ title: STATUS_LABEL[key as keyof typeof STATUS_LABEL], key, data }))
+    .map(([key, data]) => ({
+      title: STATUS_LABEL[key as keyof typeof STATUS_LABEL],
+      key,
+      data,
+    }))
     .filter((s) => s.data.length > 0);
 
-  // ✅ Ao concluir leitura: move para "lido" e fecha PDF
   const concluirLeitura = async (livro: Livro) => {
     if (!livro) return;
-
-    await atualizarStatus(livro.id, "lido");
-    setLivroAtivo(null);
+    Alert.alert("Concluir leitura", "Deseja marcar este livro como lido?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Sim",
+        onPress: async () => {
+          await atualizarStatus(livro.id, "lido");
+          setLivroAtivo(null);
+        },
+      },
+    ]);
   };
 
-  // ✅ Ao clicar no livro
   const abrirLivro = (livro: Livro) => {
     if (livro.status === "lido") {
-      // Redireciona diretamente para Criticas passando o ID do livro
       router.push({ pathname: "(tabs)/criticas", params: { livroId: livro.id } });
     } else {
-      // Abre o modal do PDF para leitura
       setLivroAtivo(livro);
     }
   };
@@ -60,7 +80,7 @@ export default function Estantes() {
           const meta = STATUS_META[item.status!];
           return (
             <TouchableOpacity
-              style={styles.card}
+              style={[styles.card, { backgroundColor: meta.cor }]}
               onPress={() => abrirLivro(item)}
             >
               {item.imagem ? (
@@ -85,7 +105,7 @@ export default function Estantes() {
         }}
       />
 
-      {/* Modal PDF */}
+      {/* Modal de PDF */}
       <Modal visible={!!livroAtivo} animationType="slide">
         <SafeAreaView style={{ flex: 1 }}>
           {livroAtivo?.pdfUri ? (
@@ -113,8 +133,8 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: "row",
     padding: 12,
-    margin: 12,
-    backgroundColor: "#FFF",
+    marginHorizontal: 12,
+    marginVertical: 6,
     borderRadius: 12,
     alignItems: "center",
   },

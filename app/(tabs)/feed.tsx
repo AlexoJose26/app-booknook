@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,195 +8,182 @@ import {
   ActivityIndicator,
   Animated,
   Pressable,
-  TextInput,
-  TouchableOpacity,
-  Alert,
+  RefreshControl,
 } from "react-native";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db } from "@/database/db";
-import { criticas, estantes, livros, usuarios, likes, comentarios } from "@/database/schema";
-import { eq, desc, inArray } from "drizzle-orm";
+import { criticas, livros, usuarios, estantes, curtidas, comentarios } from "@/database/schema";
+import { desc } from "drizzle-orm";
+import { useLivros } from "@/contexts/LivrosContext";
 
-export default function Feed({ atualizarTrigger }: { atualizarTrigger?: number }) {
+type FeedItem = {
+  id: string | number;
+  tipo: "critica" | "estante";
+  data: string;
+  livroId: string;
+  tituloLivro: string;
+  capaLivro?: string;
+  usuarioNome: string;
+  usuarioFoto?: string | null;
+  texto?: string;
+  nota?: number;
+  curtidasCount?: number;
+  curtidoPorMim?: boolean;
+  comentarios?: any[];
+};
+
+export default function Feed() {
   const router = useRouter();
-  const [feed, setFeed] = useState<any[]>([]);
+  const { estantes: estantesContext } = useLivros();
+  const [feed, setFeed] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [usuarioLogado, setUsuarioLogado] = useState<{ id: string; nome: string; foto?: string } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const animValues = useRef<Animated.Value[]>([]);
-  const [comentarioTemp, setComentarioTemp] = useState<{ [key: string]: string }>({}); // texto temporário por item
+  const [usuarioLogado, setUsuarioLogado] = useState<any>(null);
 
-  const carregarFeed = async () => {
+  const carregarUsuarioLogado = async () => {
+    const str = await AsyncStorage.getItem("usuarioLogado");
+    if (!str) return null;
+    const usuario = JSON.parse(str);
+    setUsuarioLogado(usuario);
+    return usuario;
+  };
+
+  const carregarFeed = useCallback(async () => {
     setLoading(true);
     try {
-      // ✅ Usuário logado
-      const userStr = await AsyncStorage.getItem("usuarioLogado");
-      const user = userStr ? JSON.parse(userStr) : null;
-      setUsuarioLogado(user);
+      const usuario = usuarioLogado || (await carregarUsuarioLogado());
 
-      // ✅ Usuários e map
-      const usuariosRaw = await db
-        .select({ id: usuarios.id, nome: usuarios.nome, foto: usuarios.foto_perfil })
-        .from(usuarios);
+      const usuariosRaw = await db.select().from(usuarios);
       const usuariosMap = Object.fromEntries(usuariosRaw.map(u => [u.id, u]));
 
-      // ✅ Livros
-      const livrosRaw = await db
-        .select({ id: livros.id, titulo: livros.titulo, capa: livros.imagem })
-        .from(livros);
+      const livrosRaw = await db.select().from(livros);
       const livrosMap = Object.fromEntries(livrosRaw.map(l => [l.id, l]));
 
-      // ✅ Criticas
-      const criticasRaw = await db
-        .select({
-          id: criticas.id,
-          texto: criticas.texto,
-          nota: criticas.nota,
-          data: criticas.createdAt,
-          livroId: criticas.livro_id,
-          usuarioId: criticas.usuario_id,
+      const criticasRaw = await db.select().from(criticas).orderBy(desc(criticas.createdAt));
+
+      const criticasFeed: FeedItem[] = await Promise.all(
+        criticasRaw.map(async (c) => {
+          const usuarioC = usuariosMap[c.usuario_id] ?? usuario;
+          const livro = livrosMap[c.livro_id];
+
+          const curtidasRes = await db.select().from(curtidas).where(curtidas.critica_id.eq(c.id));
+          const curtidoPorMim = curtidasRes.some((cu) => cu.usuario_id === usuario?.id);
+
+          const comentariosRes = await db.select().from(comentarios).where(comentarios.critica_id.eq(c.id));
+
+          return {
+            id: c.id,
+            tipo: "critica",
+            data: c.createdAt,
+            livroId: c.livro_id,
+            tituloLivro: livro?.titulo ?? "Livro",
+            capaLivro: livro?.imagem ?? "",
+            usuarioNome: usuarioC?.nome ?? "Usuário",
+            usuarioFoto: usuarioC?.foto_perfil ?? null,
+            texto: c.texto,
+            nota: c.nota,
+            curtidasCount: curtidasRes.length,
+            curtidoPorMim,
+            comentarios: comentariosRes,
+          };
         })
-        .from(criticas)
-        .orderBy(desc(criticas.createdAt));
+      );
 
-      // ✅ Likes
-      const likesRaw = await db.select().from(likes);
-      const likesMap: Record<string, any[]> = {};
-      likesRaw.forEach(l => {
-        if (!likesMap[l.item_id]) likesMap[l.item_id] = [];
-        likesMap[l.item_id].push(l.usuario_id);
-      });
-
-      // ✅ Comentários
-      const comentariosRaw = await db.select().from(comentarios);
-      const comentariosMap: Record<string, any[]> = {};
-      comentariosRaw.forEach(c => {
-        if (!comentariosMap[c.item_id]) comentariosMap[c.item_id] = [];
-        comentariosMap[c.item_id].push(c);
-      });
-
-      // ✅ Criticas com extras
-      const criticasComExtras = criticasRaw.map(c => {
-        const usuario = usuariosMap[c.usuarioId];
-        const livro = livrosMap[c.livroId];
-        return {
-          id: c.id,
-          tipo: "critica",
-          tituloLivro: livro?.titulo || "Livro",
-          capaLivro: livro?.capa || "",
-          usuarioNome: usuario?.nome || (user?.id === c.usuarioId ? user.nome : "Usuário"),
-          usuarioFoto: usuario?.foto || (user?.id === c.usuarioId ? user.foto : ""),
-          texto: c.texto,
-          nota: c.nota,
-          data: c.data,
-          likes: likesMap[c.id]?.length || 0,
-          likedByMe: user ? likesMap[c.id]?.includes(user.id) : false,
-          comentarios: comentariosMap[c.id]?.length || 0,
-          comentariosLista: comentariosMap[c.id] || [],
-        };
-      });
-
-      // ✅ Livros adicionados à estante
-      const estantesRaw = await db.select().from(estantes).orderBy(desc(estantes.createdAt));
-      const estantesComExtras = estantesRaw.map(e => {
-        const usuario = usuariosMap[e.usuario_id];
-        const livro = livrosMap[e.livro_id];
-        return {
-          id: e.id,
+      const estantesFeed: FeedItem[] = Object.values(estantesContext)
+        .flat()
+        .map((l: any) => ({
+          id: l.id,
           tipo: "estante",
-          tituloLivro: livro?.titulo || "Livro",
-          capaLivro: livro?.capa || "",
-          usuarioNome: usuario?.nome || (user?.id === e.usuario_id ? user.nome : "Usuário"),
-          usuarioFoto: usuario?.foto || (user?.id === e.usuario_id ? user.foto : ""),
-          data: e.createdAt,
-          likes: likesMap[e.id]?.length || 0,
-          likedByMe: user ? likesMap[e.id]?.includes(user.id) : false,
-          comentarios: comentariosMap[e.id]?.length || 0,
-          comentariosLista: comentariosMap[e.id] || [],
-        };
-      });
+          data: l.createdAt,
+          livroId: l.id,
+          tituloLivro: l.titulo,
+          capaLivro: l.imagem ?? "",
+          usuarioNome: usuario?.nome ?? "Você",
+          usuarioFoto: usuario?.foto_perfil ?? null,
+        }));
 
-      // ✅ Combinar feed
-      const combined = [...criticasComExtras, ...estantesComExtras].sort(
+      const combinado = [...criticasFeed, ...estantesFeed].sort(
         (a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()
       );
 
-      animValues.current = combined.map(() => new Animated.Value(0));
-      setFeed(combined);
+      animValues.current = combinado.map(() => new Animated.Value(0));
+      setFeed(combinado);
 
       Animated.stagger(
         80,
         animValues.current.map(anim =>
-          Animated.timing(anim, { toValue: 1, duration: 400, useNativeDriver: true })
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          })
         )
       ).start();
-    } catch (e) {
-      console.error("Erro ao carregar feed:", e);
+    } catch (err) {
+      console.error("Erro ao carregar feed:", err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [usuarioLogado, estantesContext]);
 
   useEffect(() => {
     carregarFeed();
-  }, [atualizarTrigger]);
 
-  const toggleLike = async (itemId: string) => {
-    if (!usuarioLogado) return;
-    try {
-      const liked = feed.find(f => f.id === itemId)?.likedByMe;
-      if (liked) {
-        await db.delete(likes).where(eq(likes.item_id, itemId)).where(eq(likes.usuario_id, usuarioLogado.id));
-      } else {
-        await db.insert(likes).values({ item_id: itemId, usuario_id: usuarioLogado.id, createdAt: new Date().toISOString() });
-      }
-      carregarFeed();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+    // Conectar WebSocket para feed em tempo real
+    const ws = new WebSocket("wss://seu-servidor.com/feed"); // Substituir URL real
 
-  const postarComentario = async (itemId: string) => {
-    if (!usuarioLogado || !comentarioTemp[itemId]?.trim()) return;
-    try {
-      await db.insert(comentarios).values({
-        item_id: itemId,
-        usuario_id: usuarioLogado.id,
-        texto: comentarioTemp[itemId],
-        createdAt: new Date().toISOString(),
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      // data deve conter nova crítica ou atualização de curtida/comentário
+      setFeed((prev) => {
+        const existingIndex = prev.findIndex((f) => f.id === data.id && f.tipo === data.tipo);
+        if (existingIndex >= 0) {
+          const updated = [...prev];
+          updated[existingIndex] = { ...updated[existingIndex], ...data };
+          return updated;
+        } else {
+          return [data, ...prev];
+        }
       });
-      setComentarioTemp(prev => ({ ...prev, [itemId]: "" }));
-      carregarFeed();
-    } catch (e) {
-      console.error(e);
-    }
+    };
+
+    ws.onerror = (err) => console.error("WebSocket erro:", err);
+
+    return () => ws.close();
+  }, [carregarFeed]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await carregarFeed();
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" />
-        <Text>Carregando feed…</Text>
-      </View>
-    );
-  }
-
-  const renderItem = ({ item, index }: { item: any; index: number }) => {
+  const renderItem = ({ item, index }: any) => {
     const animStyle = {
       opacity: animValues.current[index],
-      transform: [{ translateY: animValues.current[index].interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+      transform: [
+        {
+          translateY: animValues.current[index].interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0],
+          }),
+        },
+      ],
     };
 
     return (
       <Animated.View style={[styles.card, animStyle]}>
-        {/* Header */}
         <View style={styles.header}>
           {item.usuarioFoto ? (
             <Image source={{ uri: item.usuarioFoto }} style={styles.avatar} />
           ) : (
-            <View style={styles.avatarPlaceholder}><Text>👤</Text></View>
+            <View style={styles.avatarPlaceholder}>
+              <Text>👤</Text>
+            </View>
           )}
-          <View style={styles.userInfo}>
+          <View style={{ flex: 1 }}>
             <Text style={styles.nome}>{item.usuarioNome}</Text>
             <Text style={styles.acao}>
               {item.tipo === "critica" ? "publicou uma crítica" : "adicionou um livro à estante"}
@@ -204,87 +191,75 @@ export default function Feed({ atualizarTrigger }: { atualizarTrigger?: number }
           </View>
         </View>
 
-        {/* Livro */}
         <Pressable
           style={styles.livroContainer}
-          onPress={() => router.push({ pathname: "/livro", params: { livroId: item.livroId || item.livro_id } })}
+          onPress={() =>
+            router.push({ pathname: "/livro", params: { livroId: item.livroId } })
+          }
         >
-          {item.capaLivro && <Image source={{ uri: item.capaLivro }} style={styles.capa} />}
-          <View style={{ flex: 1 }}>
+          {item.capaLivro ? (
+            <Image source={{ uri: item.capaLivro }} style={styles.capa} />
+          ) : (
+            <View style={[styles.capa, styles.semCapa]}>
+              <Text>Sem capa</Text>
+            </View>
+          )}
+
+          <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={styles.titulo}>{item.tituloLivro}</Text>
             {item.tipo === "critica" && (
               <>
                 <Text style={styles.critica}>“{item.texto}”</Text>
-                {item.nota != null && <Text style={styles.nota}>⭐ {item.nota}/10</Text>}
+                <Text style={styles.nota}>⭐ {item.nota}/10</Text>
+                <Text style={{ marginTop: 4 }}>
+                  ❤️ {item.curtidasCount ?? 0} | 💬 {item.comentarios?.length ?? 0}
+                </Text>
               </>
             )}
           </View>
         </Pressable>
-
-        {/* Interações */}
-        <View style={styles.interacoes}>
-          <Pressable onPress={() => toggleLike(item.id)}>
-            <Text style={{ color: item.likedByMe ? "#EF4444" : "#6B7280" }}>❤️ {item.likes}</Text>
-          </Pressable>
-          <Text>💬 {item.comentarios}</Text>
-        </View>
-
-        {/* Comentário rápido */}
-        <View style={styles.comentarioContainer}>
-          <TextInput
-            placeholder="Escreva um comentário…"
-            value={comentarioTemp[item.id] || ""}
-            onChangeText={text => setComentarioTemp(prev => ({ ...prev, [item.id]: text }))}
-            style={styles.inputComentario}
-          />
-          <TouchableOpacity onPress={() => postarComentario(item.id)} style={styles.botaoComentario}>
-            <Text style={{ color: "#FFF" }}>Postar</Text>
-          </TouchableOpacity>
-        </View>
 
         <Text style={styles.data}>{new Date(item.data).toLocaleString()}</Text>
       </Animated.View>
     );
   };
 
+  if (loading && feed.length === 0) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+        <Text style={{ marginTop: 8 }}>Carregando feed...</Text>
+      </View>
+    );
+  }
+
   return (
     <FlatList
       data={feed}
-      keyExtractor={i => `${i.tipo}-${i.id}`}
+      keyExtractor={item => `${item.tipo}-${item.id}`}
       renderItem={renderItem}
       contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     />
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 12, paddingBottom: 24, backgroundColor: "#F3F4F6" },
+  container: { padding: 12, paddingBottom: 24 },
   loading: { flex: 1, justifyContent: "center", alignItems: "center" },
-  card: {
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 16,
-    backgroundColor: "#FFF",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  header: { flexDirection: "row", alignItems: "center" },
-  avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 12 },
-  avatarPlaceholder: { width: 50, height: 50, borderRadius: 25, backgroundColor: "#E5E7EB", justifyContent: "center", alignItems: "center", marginRight: 12 },
-  userInfo: { flex: 1, justifyContent: "center" },
+  card: { backgroundColor: "#FFF", padding: 16, borderRadius: 16, marginBottom: 16, elevation: 3 },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  avatar: { width: 48, height: 48, borderRadius: 24, marginRight: 12 },
+  avatarPlaceholder: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#E5E7EB", justifyContent: "center", alignItems: "center", marginRight: 12 },
   nome: { fontWeight: "bold", fontSize: 16 },
-  acao: { fontSize: 13, color: "#6B7280", marginTop: 2 },
-  livroContainer: { flexDirection: "row", marginTop: 10, gap: 12, alignItems: "center" },
+  acao: { fontSize: 13, color: "#6B7280" },
+  livroContainer: { flexDirection: "row", alignItems: "center" },
   capa: { width: 70, height: 100, borderRadius: 8 },
+  semCapa: { backgroundColor: "#E5E7EB", justifyContent: "center", alignItems: "center" },
   titulo: { fontSize: 16, fontWeight: "bold" },
-  critica: { marginTop: 6, fontStyle: "italic", color: "#374151" },
+  critica: { marginTop: 6, fontStyle: "italic" },
   nota: { marginTop: 4, fontWeight: "bold", color: "#F59E0B" },
-  interacoes: { flexDirection: "row", gap: 16, marginTop: 8, alignItems: "center" },
-  comentarioContainer: { flexDirection: "row", marginTop: 8, alignItems: "center", gap: 8 },
-  inputComentario: { flex: 1, borderWidth: 1, borderColor: "#D1D5DB", borderRadius: 12, padding: 8 },
-  botaoComentario: { backgroundColor: "#3B82F6", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
   data: { fontSize: 12, opacity: 0.5, marginTop: 8 },
+  curtidas: { marginTop: 4, fontSize: 13 },
 });
