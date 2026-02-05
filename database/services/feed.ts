@@ -1,9 +1,8 @@
-import { db } from "../db";
-import { feed } from "../schema";
-import { desc } from "drizzle-orm";
+// serviços de feed (mock)
+export let feedMock: any[] = [];
 
 export async function listarFeed() {
-  return db.select().from(feed).orderBy(desc(feed.createdAt));
+  return feedMock.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
 }
 
 export async function criarFeedItem({
@@ -17,7 +16,7 @@ export async function criarFeedItem({
   livro_titulo?: string;
   critica_id?: number;
 }) {
-  await db.insert(feed).values({
+  feedMock.push({
     usuario_id,
     acao,
     livro_titulo,

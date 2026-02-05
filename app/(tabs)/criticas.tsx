@@ -2,363 +2,271 @@ import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
+  ScrollView,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
   Alert,
   Image,
-  ActivityIndicator,
-  ScrollView,
+  TouchableOpacity,
+  Pressable,
   Animated,
+  Easing,
 } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { eq, desc, inArray } from "drizzle-orm";
-
+import { LinearGradient } from "expo-linear-gradient";
+import { useLivros } from "../../contexts/LivrosContext";
+import { useUsuario } from "../../contexts/UsuarioContext";
+import { useThemeCustom } from "@/contexts/ThemeContext";
 import { db } from "@/database/db";
-import { criticas, livros, estantes, curtidas, comentarios } from "@/database/schema";
+import { criticas, usuarios, estantes } from "@/database/schema";
+import { eq, desc } from "drizzle-orm";
 
-type CriticaType = {
-  id: number;
-  usuario_id: string;
-  livro_id: string;
-  texto: string;
-  nota: number;
-  createdAt: string;
-};
+export default function Criticas({ atualizarFeed }: { atualizarFeed?: () => void }) {
+  const { estantes: estantesUsuario } = useLivros();
+  const { usuario } = useUsuario();
+  const { colors, theme } = useThemeCustom();
 
-type LivroType = {
-  id: string;
-  titulo?: string;
-  autor?: string;
-  imagem?: string;
-};
+  const [criticasPorLivro, setCriticasPorLivro] = useState<any[]>([]);
+  const [editando, setEditando] = useState(false);
+  const [textoCritica, setTextoCritica] = useState("");
+  const [nota, setNota] = useState<number | null>(null);
+  const [criticaAtual, setCriticaAtual] = useState<any>(null);
+  const [livroSelecionado, setLivroSelecionado] = useState<any>(null);
 
-type LivroComCritica = LivroType & {
-  critica?: CriticaType;
-  texto: string;
-  nota: number | null;
-  editando: boolean;
-  salvando: boolean;
-  curtidasCount?: number;
-  curtidoPorMim?: boolean;
-  comentarios?: any[];
-};
+  const animationForm = useRef(new Animated.Value(0)).current;
+  const animationsCards = useRef([]).current;
 
-export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => void }) {
-  const router = useRouter();
-  const params = useLocalSearchParams();
-  const livroIdParam = typeof params.livroId === "string" ? params.livroId : null;
-  const vemDaEstante = params.vemDaEstante === "true";
+  const [backupTexto, setBackupTexto] = useState("");
+  const [backupNota, setBackupNota] = useState<number | null>(null);
 
-  const [usuario, setUsuario] = useState<{ id: string; nome: string } | null>(null);
-  const [livrosData, setLivrosData] = useState<LivroComCritica[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Carregar críticas
+  const carregarCriticas = async () => {
+    if (!usuario || !estantesUsuario) return;
+    const livrosLidos = estantesUsuario.lido || [];
+    const todasCriticas: any[] = [];
 
-  const animValues = useRef<Animated.Value[]>([]);
-
-  useEffect(() => {
-    const carregarLivros = async () => {
-      setLoading(true);
+    for (const livro of livrosLidos) {
       try {
-        const userStr = await AsyncStorage.getItem("usuarioLogado");
-        if (!userStr) {
-          router.replace("/login");
-          return;
-        }
-        const user = JSON.parse(userStr);
-        setUsuario(user);
-
-        let livrosRes: LivroType[] = [];
-
-        if (vemDaEstante && user.id) {
-          const estanteLivros = await db
-            .select({ livro_id: estantes.livro_id })
-            .from(estantes)
-            .where(eq(estantes.usuario_id, user.id));
-
-          const livroIds = estanteLivros.map((e) => e.livro_id);
-          if (livroIds.length === 0) {
-            setLivrosData([]);
-            return;
-          }
-
-          livrosRes = await db.select().from(livros).where(inArray(livros.id, livroIds));
-        } else if (livroIdParam) {
-          const res = await db.select().from(livros).where(eq(livros.id, livroIdParam));
-          if (!res.length) {
-            Alert.alert("Livro não encontrado");
-            router.back();
-            return;
-          }
-          livrosRes = res;
-        }
-
-        const livroIds = livrosRes.map((l) => l.id);
-
-        const criticasRes: CriticaType[] = await db
-          .select()
+        const res = await db
+          .select({
+            id: criticas.id,
+            usuario_id: criticas.usuario_id,
+            livro_id: criticas.livro_id,
+            texto: criticas.texto,
+            nota: criticas.nota,
+            createdAt: criticas.createdAt,
+            usuario_nome: usuarios.nome,
+            usuario_foto: usuarios.foto_perfil,
+          })
           .from(criticas)
-          .where(eq(criticas.usuario_id, user.id))
-          .where(inArray(criticas.livro_id, livroIds))
+          .leftJoin(usuarios, eq(usuarios.id, criticas.usuario_id))
+          .where(eq(criticas.livro_id, livro.id))
           .orderBy(desc(criticas.createdAt));
 
-        const livrosComCritica: LivroComCritica[] = await Promise.all(
-          livrosRes.map(async (livro) => {
-            const crit = criticasRes.find((c) => c.livro_id === livro.id);
+        const dadosComFoto = res.map((c) => ({
+          ...c,
+          usuario_nome: c.usuario_nome ?? "Usuário",
+          usuario_foto: c.usuario_foto ?? null,
+        }));
 
-            // Curtidas e comentários
-            let curtidasCount = 0;
-            let curtidoPorMim = false;
-            let comentariosRes: any[] = [];
-
-            if (crit) {
-              const curtidasRaw = await db.select().from(curtidas).where(curtidas.critica_id.eq(crit.id));
-              curtidasCount = curtidasRaw.length;
-              curtidoPorMim = curtidasRaw.some((c) => c.usuario_id === user.id);
-
-              comentariosRes = await db.select().from(comentarios).where(comentarios.critica_id.eq(crit.id));
-            }
-
-            return {
-              ...livro,
-              critica: crit,
-              texto: crit?.texto ?? "",
-              nota: crit?.nota ?? null,
-              editando: !crit,
-              salvando: false,
-              curtidasCount,
-              curtidoPorMim,
-              comentarios: comentariosRes,
-            };
-          })
-        );
-
-        animValues.current = livrosComCritica.map(() => new Animated.Value(0));
-        setLivrosData(livrosComCritica);
-
-        Animated.stagger(
-          100,
-          animValues.current.map((anim) =>
-            Animated.timing(anim, {
-              toValue: 1,
-              duration: 400,
-              useNativeDriver: true,
-            })
-          )
-        ).start();
-      } finally {
-        setLoading(false);
+        todasCriticas.push({ livro, criticas: dadosComFoto });
+      } catch (err) {
+        console.error("Erro ao carregar críticas:", err);
       }
-    };
+    }
 
-    setLivrosData([]);
-    carregarLivros();
-  }, [livroIdParam, vemDaEstante, router]);
+    setCriticasPorLivro(todasCriticas);
+  };
 
-  const salvarCritica = async (index: number) => {
-    const livroAtual = livrosData[index];
-    if (!usuario || !livroAtual.texto.trim() || livroAtual.nota === null) {
-      Alert.alert("Erro", "Preencha a nota e o comentário antes de salvar.");
+  useEffect(() => {
+    carregarCriticas();
+  }, [usuario, estantesUsuario]);
+
+  const animarFormulario = () => {
+    animationForm.setValue(0);
+    Animated.timing(animationForm, {
+      toValue: 1,
+      duration: 400,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const selecionarCritica = (livroId: string) => {
+    const livroData = criticasPorLivro.find((c) => c.livro.id === livroId);
+    if (!livroData) return;
+
+    setLivroSelecionado(livroData.livro);
+    const minhaCritica = livroData.criticas.find((c) => c.usuario_id === usuario?.id);
+    setCriticaAtual(minhaCritica ?? null);
+    setTextoCritica(minhaCritica?.texto ?? "");
+    setNota(minhaCritica?.nota ?? null);
+
+    setBackupTexto(minhaCritica?.texto ?? "");
+    setBackupNota(minhaCritica?.nota ?? null);
+
+    setEditando(true);
+    animarFormulario();
+  };
+
+  // Fechar sem salvar
+  const fecharEdicao = () => {
+    setTextoCritica(backupTexto);
+    setNota(backupNota);
+    setCriticaAtual(null);
+    setLivroSelecionado(null);
+    setEditando(false);
+  };
+
+  const salvarCritica = async () => {
+    if (!usuario || !livroSelecionado) return;
+    if (!textoCritica.trim() || nota === null) {
+      Alert.alert("Erro", "Preencha o texto e a nota antes de salvar.");
       return;
     }
 
-    const updatedLivros = [...livrosData];
-    updatedLivros[index] = { ...livroAtual, salvando: true };
-    setLivrosData(updatedLivros);
-
-    const data = new Date().toISOString();
-
     try {
-      let criticaSalva: CriticaType;
-
-      if (livroAtual.critica) {
+      if (criticaAtual) {
         await db
           .update(criticas)
-          .set({ texto: livroAtual.texto, nota: livroAtual.nota!, createdAt: data })
-          .where(eq(criticas.id, livroAtual.critica.id));
-
-        criticaSalva = { ...livroAtual.critica, texto: livroAtual.texto, nota: livroAtual.nota!, createdAt: data };
+          .set({ texto: textoCritica, nota, createdAt: new Date().toISOString() })
+          .where(eq(criticas.id, criticaAtual.id));
       } else {
-        const insertId = await db.insert(criticas).values({
+        await db.insert(criticas).values({
           usuario_id: usuario.id,
-          livro_id: livroAtual.id,
-          texto: livroAtual.texto,
-          nota: livroAtual.nota!,
-          createdAt: data,
+          livro_id: livroSelecionado.id,
+          texto: textoCritica,
+          nota,
+          createdAt: new Date().toISOString(),
         });
-
-        criticaSalva = {
-          id: insertId,
-          usuario_id: usuario.id,
-          livro_id: livroAtual.id,
-          texto: livroAtual.texto,
-          nota: livroAtual.nota!,
-          createdAt: data,
-        };
       }
 
-      const updated = [...livrosData];
-      updated[index] = { ...updated[index], critica: criticaSalva, editando: false, salvando: false };
-      setLivrosData(updated);
-
-      if (onAtualizarFeed) onAtualizarFeed();
-    } catch (e: any) {
-      console.error(e);
-      Alert.alert("Erro", e?.message ?? "Erro ao salvar crítica");
-      const updated = [...livrosData];
-      updated[index] = { ...livroAtual, salvando: false };
-      setLivrosData(updated);
+      fecharEdicao();
+      await carregarCriticas();
+      atualizarFeed?.();
+    } catch (error) {
+      console.error("Erro ao salvar crítica:", error);
     }
   };
 
-  const deletarCritica = async (index: number) => {
-    const livroAtual = livrosData[index];
-    if (!livroAtual.critica) return;
+  const deletarCritica = async () => {
+    if (!criticaAtual) return;
 
-    Alert.alert("Confirmar", "Deseja realmente deletar sua crítica?", [
+    Alert.alert("Confirmação", "Deseja deletar sua crítica?", [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Deletar",
         style: "destructive",
         onPress: async () => {
           try {
-            await db.delete(criticas).where(eq(criticas.id, livroAtual.critica!.id));
-
-            const updatedLivros = [...livrosData];
-            updatedLivros[index] = {
-              ...livroAtual,
-              critica: undefined,
-              texto: "",
-              nota: null,
-              editando: true,
-            };
-            setLivrosData(updatedLivros);
-
-            if (onAtualizarFeed) onAtualizarFeed();
-          } catch (e: any) {
-            console.error(e);
-            Alert.alert("Erro", "Falha ao deletar crítica");
+            await db.delete(criticas).where(eq(criticas.id, criticaAtual.id));
+            fecharEdicao();
+            await carregarCriticas();
+            atualizarFeed?.();
+          } catch (error) {
+            console.error("Erro ao deletar crítica:", error);
           }
         },
       },
     ]);
   };
 
-  const renderEstrelas = (nota: number | null, onPress?: (i: number) => void) => (
-    <View style={{ flexDirection: "row" }}>
-      {Array.from({ length: 5 }, (_, i) => (
-        <TouchableOpacity
-          key={i}
-          onPress={() => onPress && onPress(i + 1)}
-          activeOpacity={onPress ? 0.7 : 1}
-          style={{ marginRight: 4 }}
-        >
-          <Text style={{ fontSize: 24, color: i < (nota ?? 0) ? "#FFD700" : "#D1D5DB" }}>★</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+  const getAvatar = (c) => (c.usuario_id === usuario.id ? usuario.foto_perfil : c.usuario_foto);
 
-  if (loading) {
+  if (!usuario) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator size="large" />
-        <Text>A carregar livros…</Text>
+        <Text style={{ color: colors.text }}>Carregando críticas…</Text>
       </View>
     );
   }
 
+  const translateYForm = animationForm.interpolate({ inputRange: [0, 1], outputRange: [50, 0] });
+  const opacityForm = animationForm.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <TouchableOpacity onPress={() => router.back()}>
-        <Text style={styles.voltar}>← Voltar</Text>
-      </TouchableOpacity>
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: colors.background }]}>
+      {criticasPorLivro.map((livroData, indexLivro) => (
+        <View key={livroData.livro.id} style={{ marginBottom: 32 }}>
+          <Text style={[styles.titulo, { color: colors.text }]}>{livroData.livro.titulo}</Text>
+          <Text style={[styles.autor, { color: colors.secondary }]}>{livroData.livro.autor}</Text>
 
-      {livrosData.map((livro, index) => {
-        const animStyle = {
-          opacity: animValues.current[index],
-          transform: [
-            { translateY: animValues.current[index].interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) },
-          ],
-        };
+          {/* Formulário de edição */}
+          {livroSelecionado?.id === livroData.livro.id && editando && (
+            <Animated.View style={{ transform: [{ translateY: translateYForm }], opacity: opacityForm }}>
+              <LinearGradient
+                colors={theme === "dark" ? ["#1F2937", "#111827"] : ["#E5E7EB", "#F9FAFB"]}
+                style={styles.form}
+              >
+                <TouchableOpacity onPress={fecharEdicao} style={{ position: "absolute", top: 8, right: 8 }}>
+                  <Text style={{ fontSize: 20, color: colors.secondary }}>✕</Text>
+                </TouchableOpacity>
 
-        return (
-          <Animated.View key={livro.id} style={[{ marginBottom: 24 }, animStyle]}>
-            <View style={styles.cardLivro}>
-              {livro.imagem ? (
-                <Image source={{ uri: livro.imagem }} style={styles.capa} />
-              ) : (
-                <View style={[styles.capa, { backgroundColor: "#E5E7EB", justifyContent: "center", alignItems: "center" }]}>
-                  <Text>Sem imagem</Text>
-                </View>
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.titulo}>{livro.titulo ?? ""}</Text>
-                <Text style={styles.autor}>{livro.autor ?? ""}</Text>
-              </View>
-            </View>
-
-            {livro.editando && (
-              <View style={styles.form}>
                 <TextInput
                   placeholder="Escreva sua crítica…"
-                  value={livro.texto}
-                  onChangeText={(text) => {
-                    const updated = [...livrosData];
-                    updated[index] = { ...updated[index], texto: text };
-                    setLivrosData(updated);
-                  }}
+                  placeholderTextColor={colors.placeholder}
+                  value={textoCritica}
+                  onChangeText={setTextoCritica}
                   multiline
-                  style={styles.textarea}
+                  style={[styles.textarea, { color: colors.text, backgroundColor: theme === "dark" ? "#111827" : "#FFF", borderColor: colors.secondary }]}
                 />
 
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={{ fontWeight: "600", marginBottom: 4 }}>Nota:</Text>
-                  {renderEstrelas(livro.nota, (i) => {
-                    const updated = [...livrosData];
-                    updated[index] = { ...updated[index], nota: i };
-                    setLivrosData(updated);
-                  })}
+                <View style={styles.estrelas}>
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <TouchableOpacity key={i} onPress={() => setNota(i)} activeOpacity={0.7}>
+                      <Text style={[styles.estrela, { color: i <= (nota ?? 0) ? "#FFD700" : colors.secondary }]}>★</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
 
-                <TouchableOpacity style={[styles.botao, { backgroundColor: "#10B981" }]} onPress={() => salvarCritica(index)} disabled={livro.salvando}>
-                  <Text style={styles.botaoTexto}>{livro.critica ? "Atualizar crítica" : "Publicar crítica"}</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <TouchableOpacity style={[styles.botao, styles.botaoSalvar]} onPress={salvarCritica} activeOpacity={0.8}>
+                    <Text style={styles.botaoTexto}>Publicar</Text>
+                  </TouchableOpacity>
+
+                  {criticaAtual && (
+                    <TouchableOpacity style={[styles.botao, styles.botaoDeletar]} onPress={deletarCritica} activeOpacity={0.8}>
+                      <Text style={styles.botaoTexto}>Deletar</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </LinearGradient>
+            </Animated.View>
+          )}
+
+          <Text style={[styles.subtitulo, { color: colors.text }]}>Críticas</Text>
+
+          {livroData.criticas.map((c) => (
+            <Pressable key={c.id} style={[styles.cardCritica, { backgroundColor: theme === "dark" ? "#1F2937" : "#FFF" }]}>
+              <View style={styles.usuarioRow}>
+                {getAvatar(c) ? <Image source={{ uri: getAvatar(c) }} style={styles.avatar} /> : <View style={[styles.avatar, { backgroundColor: colors.secondary, justifyContent: "center", alignItems: "center" }]}><Text>👤</Text></View>}
+                <Text style={[styles.usuarioNome, { color: colors.text }]}>{c.usuario_id === usuario.id ? usuario.nome : c.usuario_nome}</Text>
               </View>
-            )}
 
-            {!livro.editando && livro.critica && (
-              <View style={styles.cardCritica}>
-                {renderEstrelas(livro.critica.nota)}
-                <Text style={[styles.mensagemCritica, { marginTop: 6 }]}>
-                  {usuario?.nome ?? "Usuário"} comentou: "{livro.critica?.texto ?? ""}"
-                </Text>
-                <Text style={{ marginTop: 4 }}>❤️ {livro.curtidasCount ?? 0} | 💬 {livro.comentarios?.length ?? 0}</Text>
+              <Text style={[styles.textoCritica, { color: colors.text }]}>{c.texto}</Text>
+              <Text style={[styles.nota, { color: "#F59E0B" }]}>Nota: {c.nota} ★</Text>
+              <Text style={[styles.data, { color: colors.secondary }]}>Criado em: {new Date(c.createdAt).toLocaleString()}</Text>
 
-                <View style={styles.botaoContainer}>
-                  <TouchableOpacity style={[styles.botao, { backgroundColor: "#3B82F6" }]} onPress={() => {
-                    const updated = [...livrosData];
-                    updated[index] = {
-                      ...updated[index],
-                      editando: true,
-                      texto: updated[index].critica?.texto ?? "",
-                      nota: updated[index].critica?.nota ?? null,
-                    };
-                    setLivrosData(updated);
-                  }}>
+              {c.usuario_id === usuario.id && !editando && (
+                <View style={styles.botoesRow}>
+                  <TouchableOpacity style={[styles.botao, styles.botaoAtualizar]} onPress={() => selecionarCritica(livroData.livro.id)} activeOpacity={0.8}>
                     <Text style={styles.botaoTexto}>Atualizar</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={[styles.botao, { backgroundColor: "#EF4444" }]} onPress={() => deletarCritica(index)}>
+                  <TouchableOpacity style={[styles.botao, styles.botaoDeletar]} onPress={() => { setCriticaAtual(c); deletarCritica(); }} activeOpacity={0.8}>
                     <Text style={styles.botaoTexto}>Deletar</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
-            )}
-          </Animated.View>
-        );
-      })}
+              )}
+            </Pressable>
+          ))}
+
+          {!livroData.criticas.find((c) => c.usuario_id === usuario.id) && (
+            <TouchableOpacity style={[styles.botao, styles.botaoSalvar, { marginTop: 12 }]} onPress={() => selecionarCritica(livroData.livro.id)}>
+              <Text style={styles.botaoTexto}>Adicionar Crítica</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ))}
     </ScrollView>
   );
 }
@@ -366,16 +274,24 @@ export default function Criticas({ onAtualizarFeed }: { onAtualizarFeed?: () => 
 const styles = StyleSheet.create({
   container: { padding: 16, paddingBottom: 40 },
   loading: { flex: 1, justifyContent: "center", alignItems: "center" },
-  voltar: { color: "#1877F2", marginBottom: 10, fontWeight: "600" },
-  cardLivro: { flexDirection: "row", backgroundColor: "#FFF", padding: 12, borderRadius: 12, marginBottom: 12, alignItems: "center" },
-  capa: { width: 80, height: 120, marginRight: 12, borderRadius: 8 },
-  titulo: { fontSize: 18, fontWeight: "bold", marginBottom: 2 },
-  autor: { color: "#6B7280", fontSize: 14 },
-  form: { backgroundColor: "#FFF", padding: 16, borderRadius: 14, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
-  textarea: { borderWidth: 1, borderRadius: 12, padding: 14, minHeight: 100, marginBottom: 12, borderColor: "#E5E7EB", fontSize: 15 },
-  botaoContainer: { flexDirection: "row", gap: 12, marginTop: 12 },
-  botao: { flex: 1, padding: 14, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  botaoTexto: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
-  cardCritica: { backgroundColor: "#FFF", padding: 16, borderRadius: 12, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 6, elevation: 2 },
-  mensagemCritica: { fontSize: 15, fontStyle: "italic", color: "#374151" },
+  titulo: { fontSize: 24, fontWeight: "bold", marginBottom: 4 },
+  autor: { fontSize: 16, marginBottom: 12 },
+  form: { padding: 20, borderRadius: 16, marginBottom: 16, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  textarea: { borderWidth: 1, borderRadius: 12, padding: 14, minHeight: 100, fontSize: 15, marginBottom: 12 },
+  estrelas: { flexDirection: "row", marginBottom: 16 },
+  estrela: { fontSize: 28, marginRight: 8 },
+  botao: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center", justifyContent: "center", marginHorizontal: 4, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 8, elevation: 4 },
+  botaoTexto: { color: "#FFF", fontWeight: "bold", fontSize: 16 },
+  botaoSalvar: { backgroundColor: "#10B981" },
+  botaoAtualizar: { backgroundColor: "#3B82F6" },
+  botaoDeletar: { backgroundColor: "#EF4444" },
+  subtitulo: { fontSize: 18, fontWeight: "bold", marginTop: 24, marginBottom: 8 },
+  cardCritica: { padding: 16, borderRadius: 16, marginVertical: 8, shadowRadius: 6, elevation: 3 },
+  usuarioRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  usuarioNome: { fontWeight: "bold", marginLeft: 8 },
+  avatar: { width: 36, height: 36, borderRadius: 18 },
+  textoCritica: { fontSize: 15, marginBottom: 4 },
+  nota: { fontSize: 14, marginBottom: 4 },
+  data: { fontSize: 12 },
+  botoesRow: { flexDirection: "row", marginTop: 12 },
 });

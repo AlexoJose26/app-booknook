@@ -1,31 +1,24 @@
-import { db } from "../db";
-import { comentarios } from "../schema";
-import { eq, desc } from "drizzle-orm";
+// serviços de comentários (mock)
+export let comentariosMock: any[] = [];
 
 export async function criarComentario(
   usuarioId: string,
   criticaId: number,
   texto: string
 ) {
-  const createdAt = new Date().toISOString();
-
-  const [novo] = await db
-    .insert(comentarios)
-    .values({
-      usuario_id: usuarioId,
-      critica_id: criticaId,
-      texto,
-      createdAt,
-    })
-    .returning();
-
+  const novo = {
+    id: comentariosMock.length + 1,
+    usuario_id: usuarioId,
+    critica_id: criticaId,
+    texto,
+    createdAt: new Date().toISOString(),
+  };
+  comentariosMock.push(novo);
   return novo;
 }
 
 export async function listarComentarios(criticaId: number) {
-  return db
-    .select()
-    .from(comentarios)
-    .where(eq(comentarios.critica_id, criticaId))
-    .orderBy(desc(comentarios.createdAt));
+  return comentariosMock
+    .filter(c => c.critica_id === criticaId)
+    .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
 }

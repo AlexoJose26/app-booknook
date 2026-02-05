@@ -3,12 +3,12 @@ module.exports = function (api) {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
-      'react-native-reanimated/plugin', // mantém este plugin
+      'react-native-reanimated/plugin',
       [
         'module-resolver',
         {
           alias: {
-            '@': './', // permite "@/database" e "@/app/..."
+            '@': './',
           },
           extensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],
         },

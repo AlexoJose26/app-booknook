@@ -1,50 +1,46 @@
 import { sqlite } from "./db";
 
 export function runMigrations() {
-  sqlite.execSync(`
-    PRAGMA journal_mode = WAL;
-
-    CREATE TABLE IF NOT EXISTS migrations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      version INTEGER NOT NULL UNIQUE,
-      createdAt TEXT NOT NULL
-    );
-  `);
-
-  const result = sqlite.getAllSync<{ version: number }>(
-    "SELECT version FROM migrations ORDER BY version DESC LIMIT 1"
-  );
-
-  const currentVersion = result[0]?.version ?? 0;
-
-
-  if (currentVersion < 1) {
+  try {
     sqlite.execSync(`
-      CREATE TABLE IF NOT EXISTS usuarios (
+      DROP TABLE IF EXISTS usuarios;
+      DROP TABLE IF EXISTS livros;
+      DROP TABLE IF EXISTS estantes;
+      DROP TABLE IF EXISTS criticas;
+    `);
+
+    sqlite.execSync(`
+      CREATE TABLE usuarios (
         id TEXT PRIMARY KEY,
-        nome TEXT NOT NULL UNIQUE,
+        nome TEXT NOT NULL,
         senha TEXT NOT NULL,
         foto_perfil TEXT
       );
+    `);
 
-      CREATE TABLE IF NOT EXISTS livros (
+    sqlite.execSync(`
+      CREATE TABLE livros (
         id TEXT PRIMARY KEY,
         titulo TEXT NOT NULL,
         autor TEXT,
         descricao TEXT,
         imagem TEXT,
-        pdfUri TEXT
+        googleReaderLink TEXT
       );
+    `);
 
-      CREATE TABLE IF NOT EXISTS estantes (
+    sqlite.execSync(`
+      CREATE TABLE estantes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         usuario_id TEXT NOT NULL,
         livro_id TEXT NOT NULL,
         status TEXT NOT NULL,
         createdAt TEXT NOT NULL
       );
+    `);
 
-      CREATE TABLE IF NOT EXISTS criticas (
+    sqlite.execSync(`
+      CREATE TABLE criticas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         usuario_id TEXT NOT NULL,
         livro_id TEXT NOT NULL,
@@ -52,36 +48,10 @@ export function runMigrations() {
         nota INTEGER,
         createdAt TEXT NOT NULL
       );
-
-      CREATE TABLE IF NOT EXISTS likes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario_id TEXT NOT NULL,
-        critica_id INTEGER NOT NULL,
-        createdAt TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS comentarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario_id TEXT NOT NULL,
-        critica_id INTEGER NOT NULL,
-        texto TEXT NOT NULL,
-        createdAt TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS feed (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario_id TEXT NOT NULL,
-        acao TEXT NOT NULL,
-        livro_titulo TEXT NOT NULL,
-        data TEXT NOT NULL
-      );
     `);
 
-    sqlite.execSync(`
-      INSERT INTO migrations (version, createdAt)
-      VALUES (1, '${new Date().toISOString()}');
-    `);
-
-    console.log("Migration v1 aplicada");
+    console.log("Migrations executadas com sucesso");
+  } catch (e) {
+    console.error("Erro nas migrations:", e);
   }
 }

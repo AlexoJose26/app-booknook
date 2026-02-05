@@ -1,29 +1,17 @@
 import React, { useEffect, useState } from "react";
-import {
-  SafeAreaView,
-  View,
-  Text,
-  Platform,
-  StatusBar as RNStatusBar,
-  StyleSheet,
-} from "react-native";
-import Constants from "expo-constants";
+import { View, Text, StyleSheet } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 
 import { ThemeProviderCustom, useThemeCustom } from "@/contexts/ThemeContext";
 import { LivrosProvider } from "@/contexts/LivrosContext";
-import { UserProvider } from "@/contexts/UserContext";
+import { UsuarioProvider } from "@/contexts/UsuarioContext";
 import { runMigrations } from "@/database/migrations";
 
 export const unstable_settings = { anchor: "(tabs)" };
 
 export default function RootLayout() {
-  const statusBarHeight =
-    Platform.OS === "android"
-      ? RNStatusBar.currentHeight || 0
-      : Constants.statusBarHeight;
-
   const [dbReady, setDbReady] = useState(false);
 
   useEffect(() => {
@@ -45,24 +33,25 @@ export default function RootLayout() {
 
   return (
     <ThemeProviderCustom>
-      <UserProvider>
+      <UsuarioProvider>
         <LivrosProvider>
-          <ThemeWrapper statusBarHeight={statusBarHeight} />
+          <ThemeWrapper />
         </LivrosProvider>
-      </UserProvider>
+      </UsuarioProvider>
     </ThemeProviderCustom>
   );
 }
 
-function ThemeWrapper({ statusBarHeight }: { statusBarHeight: number }) {
+function ThemeWrapper() {
   const { theme } = useThemeCustom();
   const isDark = theme === "dark";
+  const insets = useSafeAreaInsets();
 
   return (
     <SafeAreaView
       style={[
         styles.safeArea,
-        { paddingTop: statusBarHeight, backgroundColor: isDark ? "#000" : "#fff" },
+        { paddingTop: insets.top, backgroundColor: isDark ? "#000" : "#fff" },
       ]}
     >
       <View style={{ flex: 1, backgroundColor: isDark ? "#111827" : "#FDF6E3" }}>

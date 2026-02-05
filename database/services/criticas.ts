@@ -1,6 +1,6 @@
-import { db } from "../db";
-import { criticas, livros, usuarios, feed } from "../schema";
-import { eq, desc } from "drizzle-orm";
+// serviços de críticas e feed (mock)
+export let criticasMock: any[] = [];
+export let feedMock: any[] = [];
 
 export async function criarCritica(
   usuario_id: string,
@@ -8,40 +8,38 @@ export async function criarCritica(
   texto: string,
   nota?: number
 ) {
-  const createdAt = new Date().toISOString();
+  const nova = {
+    id: criticasMock.length + 1,
+    usuario_id,
+    livro_id,
+    texto,
+    nota: nota ?? null,
+    createdAt: new Date().toISOString(),
+  };
+  criticasMock.push(nova);
 
-  const [nova] = await db
-    .insert(criticas)
-    .values({ usuario_id, livro_id, texto, nota: nota ?? null, createdAt })
-    .returning({ id: criticas.id });
+  const livroTitulo = "Livro"; // mock
 
-  const livro = await db
-    .select({ titulo: livros.titulo })
-    .from(livros)
-    .where(eq(livros.id, livro_id));
-
-  await db.insert(feed).values({
+  feedMock.push({
     usuario_id,
     acao: "publicou uma crítica",
-    livro_titulo: livro[0]?.titulo ?? "Livro",
-    data: createdAt,
+    livro_titulo: livroTitulo,
+    data: nova.createdAt,
   });
 
   return nova;
 }
 
 export async function listarCriticas(livro_id: string) {
-  return db
-    .select({
-      id: criticas.id,
-      texto: criticas.texto,
-      nota: criticas.nota,
-      createdAt: criticas.createdAt,
-      nome: usuarios.nome,
-      foto_perfil: usuarios.foto_perfil,
-    })
-    .from(criticas)
-    .innerJoin(usuarios, eq(criticas.usuario_id, usuarios.id))
-    .where(eq(criticas.livro_id, livro_id))
-    .orderBy(desc(criticas.createdAt));
+  return criticasMock
+    .filter(c => c.livro_id === livro_id)
+    .map(c => ({
+      id: c.id,
+      texto: c.texto,
+      nota: c.nota,
+      createdAt: c.createdAt,
+      nome: "Usuário Mock",
+      foto_perfil: "https://via.placeholder.com/150",
+    }))
+    .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
 }

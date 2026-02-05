@@ -1,13 +1,21 @@
-import { db } from "../db";
-import { usuarios } from "../schema";
-import { eq } from "drizzle-orm";
+// serviços de usuários (mock)
+export let usuariosMock: any[] = [];
 
-export async function atualizarFotoPerfil(
-  usuarioId: string,
-  fotoUri: string
-) {
-  await db
-    .update(usuarios)
-    .set({ foto_perfil: fotoUri })
-    .where(eq(usuarios.id, usuarioId));
+export async function atualizarFotoPerfil(usuarioId: string, fotoUri: string) {
+  const usuario = usuariosMock.find(u => u.id === usuarioId);
+  if (usuario) {
+    usuario.foto_perfil = fotoUri;
+  } else {
+    usuariosMock.push({ id: usuarioId, foto_perfil: fotoUri });
+  }
+}
+
+export async function buscarUsuarioPorNome(nome: string) {
+  return usuariosMock.find(u => u.nome === nome) ?? null;
+}
+
+export async function criarUsuario(nome: string, senha: string) {
+  const novo = { id: usuariosMock.length + 1, nome, senha, foto_perfil: "" };
+  usuariosMock.push(novo);
+  return novo;
 }
