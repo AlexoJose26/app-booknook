@@ -1,4 +1,3 @@
-// serviços de curtidas (mock)
 export let curtidasMock: any[] = [];
 
 export async function toggleCurtida(usuarioId: string, criticaId: number) {

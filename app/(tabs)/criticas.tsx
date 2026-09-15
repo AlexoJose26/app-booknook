@@ -38,7 +38,7 @@ export default function Criticas({ atualizarFeed }: { atualizarFeed?: () => void
   const [backupTexto, setBackupTexto] = useState("");
   const [backupNota, setBackupNota] = useState<number | null>(null);
 
-  // Carregar críticas
+
   const carregarCriticas = async () => {
     if (!usuario || !estantesUsuario) return;
     const livrosLidos = estantesUsuario.lido || [];
@@ -108,7 +108,7 @@ export default function Criticas({ atualizarFeed }: { atualizarFeed?: () => void
     animarFormulario();
   };
 
-  // Fechar sem salvar
+
   const fecharEdicao = () => {
     setTextoCritica(backupTexto);
     setNota(backupNota);

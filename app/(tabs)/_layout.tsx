@@ -2,20 +2,35 @@ import React from "react";
 import { Tabs } from "expo-router";
 import { Platform, StyleSheet, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useThemeCustom } from "@/contexts/ThemeContext";
 
-function TabIcon({ name, color, size, focused }: { name: string; color: string; size: number; focused: boolean }) {
+function TabIcon({
+  name,
+  color,
+  size,
+  focused,
+  activeColor,
+}: {
+  name: string;
+  color: string;
+  size: number;
+  focused: boolean;
+  activeColor: string;
+}) {
   return (
     <View style={styles.iconWrapper}>
       <MaterialCommunityIcons
         name={name}
         size={focused ? size + 2 : size}
-        color={focused ? "#1877F2" : color}
+        color={focused ? activeColor : color}
       />
     </View>
   );
 }
 
 export default function TabsLayout() {
+  const { colors } = useThemeCustom();
+
   return (
     <Tabs
       screenOptions={{
@@ -25,13 +40,15 @@ export default function TabsLayout() {
           {
             height: Platform.OS === "ios" ? 70 : 60,
             paddingBottom: Platform.OS === "ios" ? 15 : 8,
+            backgroundColor: colors.card,
           },
         ],
-        tabBarActiveTintColor: "#1877F2",
-        tabBarInactiveTintColor: "#8e8e93",
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.placeholder,
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: "500",
+          color: colors.text,
         },
       }}
     >
@@ -45,6 +62,7 @@ export default function TabsLayout() {
               color={color}
               size={size}
               focused={focused}
+              activeColor={colors.primary}
             />
           ),
         }}
@@ -55,7 +73,13 @@ export default function TabsLayout() {
         options={{
           title: "Procurar",
           tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon name="magnify" color={color} size={size} focused={focused} />
+            <TabIcon
+              name="magnify"
+              color={color}
+              size={size}
+              focused={focused}
+              activeColor={colors.primary}
+            />
           ),
         }}
       />
@@ -65,7 +89,13 @@ export default function TabsLayout() {
         options={{
           title: "Estantes",
           tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon name="bookshelf" color={color} size={size} focused={focused} />
+            <TabIcon
+              name="bookshelf"
+              color={color}
+              size={size}
+              focused={focused}
+              activeColor={colors.primary}
+            />
           ),
         }}
       />
@@ -80,6 +110,7 @@ export default function TabsLayout() {
               color={color}
               size={size}
               focused={focused}
+              activeColor={colors.primary}
             />
           ),
         }}
@@ -95,6 +126,7 @@ export default function TabsLayout() {
               color={color}
               size={size}
               focused={focused}
+              activeColor={colors.primary}
             />
           ),
         }}
@@ -105,7 +137,6 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: "#fff",
     borderTopWidth: 0,
     elevation: 0,
     shadowOpacity: 0,

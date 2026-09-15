@@ -1,101 +1,63 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useState, ReactNode } from "react";
 import { db } from "@/database/db";
-import { livros, estantes } from "@/database/schema";
+import { estantes, livros as livrosTable } from "@/database/schema";
 import { eq } from "drizzle-orm";
-import { useUsuario } from "./UsuarioContext";
 
 export type Livro = {
   id: string;
   titulo: string;
   autor?: string;
-  descricao?: string;
-  imagem?: string;
-  googleReaderLink?: string;
-  status?: "queroLer" | "lendo" | "lido";
+  imagem?: string | null;
+  googleReaderLink?: string | null;
 };
 
-type EstantesMap = {
-  queroLer: Livro[];
-  lendo: Livro[];
-  lido: Livro[];
+type LivrosContextType = {
+  livrosProcurar: Livro[];
+  setLivrosProcurar: React.Dispatch<React.SetStateAction<Livro[]>>;
+  adicionarLivroNaEstante: (livro: Livro, usuarioId: string) => Promise<void>;
 };
 
-type LivrosContextData = {
-  estantes: EstantesMap;
-  adicionarLivro: (livro: Livro, status: Livro["status"]) => Promise<void>;
-  marcarComoLido: (livroId: string) => Promise<void>;
-};
+const LivrosContext = createContext<LivrosContextType | undefined>(undefined);
 
-const LivrosContext = createContext({} as LivrosContextData);
+export const LivrosProvider = ({ children }: { children: ReactNode }) => {
+  const [livrosProcurar, setLivrosProcurar] = useState<Livro[]>([]);
 
-export function LivrosProvider({ children }: { children: React.ReactNode }) {
-  const { usuario } = useUsuario();
-  const [estantesState, setEstantesState] = useState<EstantesMap>({
-    queroLer: [],
-    lendo: [],
-    lido: [],
-  });
+  const adicionarLivroNaEstante = async (livro: Livro, usuarioId: string) => {
 
-  async function carregarEstantes() {
-    if (!usuario) return;
-
-    const rows = await db
+    const livroExistente = await db
       .select()
-      .from(estantes)
-      .where(eq(estantes.usuario_id, usuario.id));
+      .from(livrosTable)
+      .where(eq(livrosTable.id, livro.id));
 
-    const livrosDB = await db.select().from(livros);
-
-    const map: EstantesMap = { queroLer: [], lendo: [], lido: [] };
-
-    rows.forEach((e) => {
-      const livro = livrosDB.find((l) => l.id === e.livro_id);
-      if (livro) map[e.status as keyof EstantesMap].push({ ...livro, status: e.status as any });
-    });
-
-    setEstantesState(map);
-  }
-
-  async function adicionarLivro(livro: Livro, status: Livro["status"]) {
-    if (!usuario || !status) return;
-
-    await db.insert(livros).values({
-      id: livro.id,
-      titulo: livro.titulo,
-      autor: livro.autor,
-      descricao: livro.descricao,
-      imagem: livro.imagem,
-      googleReaderLink: livro.googleReaderLink,
-    }).onConflictDoNothing();
+    if (!livroExistente.length) {
+      await db.insert(livrosTable).values({
+        id: livro.id,
+        titulo: livro.titulo,
+        autor: livro.autor,
+        imagem: livro.imagem,
+        googleReaderLink: livro.googleReaderLink,
+      });
+    }
 
     await db.insert(estantes).values({
-      usuario_id: usuario.id,
+      usuario_id: usuarioId,
       livro_id: livro.id,
-      status,
+      status: "queroLer",
       createdAt: new Date().toISOString(),
     });
-
-    carregarEstantes();
-  }
-
-  async function marcarComoLido(livroId: string) {
-    await db
-      .update(estantes)
-      .set({ status: "lido" })
-      .where(eq(estantes.livro_id, livroId));
-
-    carregarEstantes();
-  }
-
-  useEffect(() => {
-    carregarEstantes();
-  }, [usuario]);
+  };
 
   return (
-    <LivrosContext.Provider value={{ estantes: estantesState, adicionarLivro, marcarComoLido }}>
+    <LivrosContext.Provider
+      value={{ livrosProcurar, setLivrosProcurar, adicionarLivroNaEstante }}
+    >
       {children}
     </LivrosContext.Provider>
   );
-}
+};
 
-export const useLivros = () => useContext(LivrosContext);
+export const useLivros = () => {
+  const context = useContext(LivrosContext);
+  if (!context) throw new Error("useLivros must be used within LivrosProvider");
+  return context;
+};

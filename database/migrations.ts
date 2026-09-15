@@ -3,10 +3,15 @@ import { sqlite } from "./db";
 export function runMigrations() {
   try {
     sqlite.execSync(`
-      DROP TABLE IF EXISTS usuarios;
-      DROP TABLE IF EXISTS livros;
-      DROP TABLE IF EXISTS estantes;
+      PRAGMA foreign_keys = OFF;
+
+      DROP TABLE IF EXISTS feed;
       DROP TABLE IF EXISTS criticas;
+      DROP TABLE IF EXISTS estantes;
+      DROP TABLE IF EXISTS livros;
+      DROP TABLE IF EXISTS usuarios;
+
+      PRAGMA foreign_keys = ON;
     `);
 
     sqlite.execSync(`
@@ -17,6 +22,7 @@ export function runMigrations() {
         foto_perfil TEXT
       );
     `);
+
 
     sqlite.execSync(`
       CREATE TABLE livros (
@@ -35,9 +41,17 @@ export function runMigrations() {
         usuario_id TEXT NOT NULL,
         livro_id TEXT NOT NULL,
         status TEXT NOT NULL,
-        createdAt TEXT NOT NULL
+        createdAt TEXT NOT NULL,
+        UNIQUE (usuario_id, livro_id),
+        FOREIGN KEY (usuario_id)
+          REFERENCES usuarios(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY (livro_id)
+          REFERENCES livros(id)
+          ON DELETE CASCADE
       );
     `);
+
 
     sqlite.execSync(`
       CREATE TABLE criticas (
@@ -46,11 +60,38 @@ export function runMigrations() {
         livro_id TEXT NOT NULL,
         texto TEXT NOT NULL,
         nota INTEGER,
-        createdAt TEXT NOT NULL
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (usuario_id)
+          REFERENCES usuarios(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY (livro_id)
+          REFERENCES livros(id)
+          ON DELETE CASCADE
       );
     `);
 
-    console.log("Migrations executadas com sucesso");
+
+    sqlite.execSync(`
+      CREATE TABLE feed (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario_id TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        livro_id TEXT,
+        critica_id INTEGER,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (usuario_id)
+          REFERENCES usuarios(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY (livro_id)
+          REFERENCES livros(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY (critica_id)
+          REFERENCES criticas(id)
+          ON DELETE CASCADE
+      );
+    `);
+
+    console.log("Migrations executadas com sucesso!");
   } catch (e) {
     console.error("Erro nas migrations:", e);
   }

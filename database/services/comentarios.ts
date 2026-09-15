@@ -1,4 +1,3 @@
-// serviços de comentários (mock)
 export let comentariosMock: any[] = [];
 
 export async function criarComentario(

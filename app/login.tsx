@@ -19,7 +19,6 @@ import { useRouter } from "expo-router";
 import { db } from "@/database/db";
 import { usuarios } from "@/database/schema";
 import { eq } from "drizzle-orm";
-import { v4 as uuidv4 } from "uuid";
 
 export default function Login() {
   const router = useRouter();
@@ -27,6 +26,7 @@ export default function Login() {
   const [senha, setSenha] = useState("");
   const [loading, setLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
@@ -37,7 +37,6 @@ export default function Login() {
       useNativeDriver: true,
     }).start();
 
-    // Verifica usuário logado
     AsyncStorage.getItem("usuarioLogado").then((user) => {
       if (user) router.replace("/(tabs)/feed");
     });
@@ -52,55 +51,60 @@ export default function Login() {
     try {
       setLoading(true);
 
-      // Busca usuário no SQLite
-      const res = await db.select().from(usuarios).where(eq(usuarios.nome, nome));
-      const usuarioEncontrado = res[0];
-      if (!usuarioEncontrado) {
+      const res = await db
+        .select()
+        .from(usuarios)
+        .where(eq(usuarios.nome, nome));
+
+      const usuario = res[0];
+
+      if (!usuario) {
         Alert.alert("Erro", "Usuário não encontrado");
         return;
       }
-      if (usuarioEncontrado.senha !== senha) {
+
+      if (usuario.senha !== senha) {
         Alert.alert("Erro", "Senha incorreta");
         return;
       }
 
-      const usuarioLogado = {
-        id: usuarioEncontrado.id,
-        nome: usuarioEncontrado.nome,
-        foto_perfil: usuarioEncontrado.foto_perfil ?? null,
-      };
-
-      // Salva no AsyncStorage
-      await AsyncStorage.setItem("usuarioLogado", JSON.stringify(usuarioLogado));
+      await AsyncStorage.setItem(
+        "usuarioLogado",
+        JSON.stringify({
+          id: usuario.id,
+          nome: usuario.nome,
+          foto_perfil: usuario.foto_perfil ?? null,
+        })
+      );
 
       router.replace("/(tabs)/feed");
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
       Alert.alert("Erro", "Falha ao efetuar login");
     } finally {
       setLoading(false);
     }
   };
 
-  const themeStyles = {
-    container: { flex: 1, backgroundColor: isDark ? "#000" : "#fff" },
-    input: { backgroundColor: isDark ? "#1f1f1f" : "#f0f0f0", color: isDark ? "#fff" : "#000" },
-    linkText: { color: "#405DE6" },
-  };
-
   return (
     <KeyboardAvoidingView
-      style={themeStyles.container}
+      style={[
+        styles.container,
+        { backgroundColor: isDark ? "#000" : "#fff" },
+      ]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.scroll}>
         <Animated.View style={{ opacity: fadeAnim, width: "100%" }}>
-          <Text style={[styles.title, { color: "#405DE6" }]}>BookNook</Text>
+          <Text style={styles.title}>BookNook</Text>
 
           <TextInput
             placeholder="Nome de usuário"
             placeholderTextColor={isDark ? "#888" : "#aaa"}
-            style={[styles.input, themeStyles.input]}
+            style={[
+              styles.input,
+              { backgroundColor: isDark ? "#1f1f1f" : "#f0f0f0", color: isDark ? "#fff" : "#000" },
+            ]}
             value={nome}
             onChangeText={setNome}
           />
@@ -108,7 +112,10 @@ export default function Login() {
           <TextInput
             placeholder="Senha"
             placeholderTextColor={isDark ? "#888" : "#aaa"}
-            style={[styles.input, themeStyles.input]}
+            style={[
+              styles.input,
+              { backgroundColor: isDark ? "#1f1f1f" : "#f0f0f0", color: isDark ? "#fff" : "#000" },
+            ]}
             secureTextEntry
             value={senha}
             onChangeText={setSenha}
@@ -118,17 +125,19 @@ export default function Login() {
             <Text style={styles.buttonText}>Entrar</Text>
           </TouchableOpacity>
 
-          <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 20 }}>
-            <Text style={{ color: isDark ? "#aaa" : "#666" }}>Não tem conta? </Text>
+          <View style={styles.footer}>
+            <Text style={{ color: isDark ? "#aaa" : "#666" }}>
+              Não tem conta?
+            </Text>
             <TouchableOpacity onPress={() => router.push("/register")}>
-              <Text style={[{ fontWeight: "bold" }, themeStyles.linkText]}>Cadastre-se</Text>
+              <Text style={styles.link}> Cadastre-se</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
       </ScrollView>
 
       {loading && (
-        <Modal transparent animationType="fade">
+        <Modal transparent>
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#405DE6" />
             <Text style={styles.loadingText}>Carregando...</Text>
@@ -138,13 +147,62 @@ export default function Login() {
     </KeyboardAvoidingView>
   );
 }
-
 const styles = StyleSheet.create({
-  scroll: { flexGrow: 1, justifyContent: "center", alignItems: "center", padding: 24 },
-  title: { fontSize: 48, fontWeight: "900", marginBottom: 40, textAlign: "center" },
-  input: { width: "100%", padding: 16, borderRadius: 14, marginBottom: 16, fontSize: 16 },
-  button: { width: "100%", padding: 16, borderRadius: 14, backgroundColor: "#405DE6", alignItems: "center", marginTop: 8 },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 18 },
-  loadingOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
-  loadingText: { color: "#fff", marginTop: 12, fontWeight: "bold", fontSize: 16 },
+  container: {
+    flex: 1,
+  },
+  scroll: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  title: {
+    fontSize: 48,
+    fontWeight: "900",
+    color: "#405DE6",
+    marginBottom: 40,
+    textAlign: "center",
+  },
+  input: {
+    width: "100%",
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 16,
+    fontSize: 16,
+  },
+  button: {
+    width: "100%",
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: "#405DE6",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  buttonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 18,
+  },
+  footer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: 20,
+  },
+  link: {
+    color: "#405DE6",
+    fontWeight: "bold",
+  },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    color: "#fff",
+    marginTop: 12,
+    fontWeight: "bold",
+    fontSize: 16,
+  },
 });

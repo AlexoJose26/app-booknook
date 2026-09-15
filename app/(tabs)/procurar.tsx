@@ -1,186 +1,153 @@
-// app/(tabs)/procurar.tsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   FlatList,
-  Image,
+  TextInput,
   StyleSheet,
-  Keyboard,
+  TouchableOpacity,
+  Image,
   ActivityIndicator,
-  Animated,
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
+  Alert,
 } from "react-native";
 import { useThemeCustom } from "@/contexts/ThemeContext";
 import { useLivros, Livro } from "@/contexts/LivrosContext";
+import { useUsuario } from "@/contexts/UsuarioContext";
+import { useRouter } from "expo-router";
 
 export default function Procurar() {
-  const { theme, colors } = useThemeCustom();
-  const { adicionarLivro, estantes } = useLivros();
-  const isDark = theme === "dark";
+  const { colors } = useThemeCustom();
+  const { livrosProcurar, setLivrosProcurar, adicionarLivroNaEstante } = useLivros();
+  const { usuario } = useUsuario();
+  const router = useRouter();
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [resultados, setResultados] = useState<Livro[]>([]);
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [livrosAdicionados, setLivrosAdicionados] = useState<string[]>([]);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 250,
-      useNativeDriver: true,
-    }).start();
-  }, []);
-
+  // Buscar livros via Google Books API
   const buscarLivros = async () => {
-    Keyboard.dismiss();
-    if (!searchTerm.trim()) return;
-
+    if (!query.trim()) return;
     setLoading(true);
 
     try {
-      const res = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(
-          searchTerm
-        )}`
+      const response = await fetch(
+        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}`
       );
-      const data = await res.json();
+      const data = await response.json();
 
-      const livrosAPI: Livro[] = (data.items ?? [])
-        .map((item: any) => {
-          const info = item.volumeInfo;
-          if (!info?.title) return null;
+      if (!data.items || data.items.length === 0) {
+        Alert.alert("Nenhum livro encontrado", "Tente outro termo de busca.");
+        setLivrosProcurar([]);
+        setLoading(false);
+        return;
+      }
 
-          const reader =
-            item.accessInfo?.webReaderLink || info.previewLink;
+      const resultados: Livro[] = data.items.map((item: any) => ({
+        id: item.id,
+        titulo: item.volumeInfo.title,
+        autor: item.volumeInfo.authors?.join(", ") || "Autor desconhecido",
+        imagem: item.volumeInfo.imageLinks?.thumbnail || null,
+        googleReaderLink: item.volumeInfo.previewLink || null,
+      }));
 
-          if (!reader) return null;
-
-          return {
-            id: item.id,
-            titulo: info.title,
-            autor: info.authors?.join(", ") ?? "Desconhecido",
-            imagem: info.imageLinks?.thumbnail,
-            googleReaderLink: reader,
-          };
-        })
-        .filter(Boolean);
-
-      const livrosComStatus = livrosAPI.map((livro) => {
-        const status = (["queroLer", "lendo", "lido"] as const).find(
-          (s) => estantes[s]?.some((l) => l.id === livro.id)
-        );
-        return { ...livro, status };
-      });
-
-      setResultados(livrosComStatus);
+      setLivrosProcurar(resultados);
     } catch (e) {
-      console.error(e);
-      setResultados([]);
+      console.error("Erro ao buscar livros:", e);
+      Alert.alert("Erro", "Não foi possível buscar os livros.");
     } finally {
       setLoading(false);
     }
   };
 
-  const adicionar = async (livro: Livro) => {
-    if (livro.status) return;
-    await adicionarLivro(livro, "queroLer");
+  // Adicionar livro à estante
+  const handleQueroLer = async (livro: Livro) => {
+    if (!usuario) {
+      Alert.alert("Não logado", "Você precisa estar logado para adicionar um livro!");
+      return;
+    }
 
-    setResultados((prev) =>
-      prev.map((l) =>
-        l.id === livro.id ? { ...l, status: "queroLer" } : l
-      )
+    try {
+      await adicionarLivroNaEstante(livro, usuario.id);
+      setLivrosAdicionados((prev) => [...prev, livro.id]);
+
+      // Redireciona para Estantes na aba "queroLer" e abre o livro automaticamente
+      router.push({
+        pathname: "/estantes",
+        params: { aba: "queroLer", livroId: livro.id },
+      });
+    } catch (e) {
+      console.error("Erro ao adicionar livro:", e);
+      Alert.alert("Erro", "Não foi possível adicionar o livro.");
+    }
+  };
+
+  const renderLivro = ({ item }: { item: Livro }) => {
+    const desabilitado = livrosAdicionados.includes(item.id);
+
+    return (
+      <View style={[styles.card, { backgroundColor: colors.card }]}>
+        {item.imagem && <Image source={{ uri: item.imagem }} style={styles.thumb} />}
+        <View style={{ flex: 1, justifyContent: "center", marginLeft: 12 }}>
+          <Text style={{ color: colors.text, fontWeight: "700" }}>{item.titulo}</Text>
+          <Text style={{ color: colors.secondary }}>{item.autor}</Text>
+          <TouchableOpacity
+            style={[styles.botao, { backgroundColor: desabilitado ? "#888" : colors.primary }]}
+            onPress={() => handleQueroLer(item)}
+            disabled={desabilitado}
+          >
+            <Text style={{ color: "#FFF", fontWeight: "700" }}>
+              {desabilitado ? "Adicionado" : "Quero ler"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     );
   };
 
-  const renderLivro = ({ item }: { item: Livro }) => (
-    <Animated.View
-      style={[
-        styles.card,
-        {
-          opacity: fadeAnim,
-          backgroundColor: colors.card,
-        },
-      ]}
-    >
-      {item.imagem && (
-        <Image source={{ uri: item.imagem }} style={styles.thumb} />
-      )}
-
-      <View style={styles.info}>
-        <Text style={[styles.titulo, { color: colors.text }]}>
-          {item.titulo}
-        </Text>
-        <Text style={{ color: colors.secondary }}>{item.autor}</Text>
-
-        {!item.status ? (
-          <TouchableOpacity
-            style={[styles.btn, { backgroundColor: colors.primary }]}
-            onPress={() => adicionar(item)}
-          >
-            <Text style={{ color: "#FFF" }}>Quero ler</Text>
-          </TouchableOpacity>
-        ) : (
-          <Text style={{ marginTop: 6, color: colors.success }}>
-            Já está na estante
-          </Text>
-        )}
-      </View>
-    </Animated.View>
-  );
-
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={{ flex: 1 }}
-      >
-        <View style={styles.searchRow}>
-          <TextInput
-            placeholder="Buscar livro"
-            placeholderTextColor={colors.secondary}
-            value={searchTerm}
-            onChangeText={setSearchTerm}
-            style={[
-              styles.input,
-              { backgroundColor: colors.input, color: colors.text },
-            ]}
-          />
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={[styles.input, { borderColor: colors.primary, color: colors.text }]}
+          placeholder="Buscar livro"
+          placeholderTextColor={colors.secondary}
+          value={query}
+          onChangeText={setQuery}
+        />
+        <TouchableOpacity style={[styles.buscarBtn, { backgroundColor: colors.primary }]} onPress={buscarLivros}>
+          <Text style={{ color: "#FFF", fontWeight: "700" }}>Buscar</Text>
+        </TouchableOpacity>
+      </View>
 
-          <TouchableOpacity
-            style={[styles.btnBuscar, { backgroundColor: colors.primary }]}
-            onPress={buscarLivros}
-          >
-            <Text style={{ color: "#FFF", fontWeight: "600" }}>Buscar</Text>
-          </TouchableOpacity>
+      {loading ? (
+        <View style={[styles.loading, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ color: colors.secondary, marginTop: 12 }}>Buscando livros...</Text>
         </View>
-
-        {loading && <ActivityIndicator size="large" color={colors.primary} />}
-
+      ) : (
         <FlatList
-          data={resultados}
+          data={livrosProcurar}
           keyExtractor={(item) => item.id}
           renderItem={renderLivro}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ padding: 16 }}
+          ListEmptyComponent={
+            <Text style={{ color: colors.secondary, textAlign: "center", marginTop: 40 }}>
+              Nenhum livro encontrado
+            </Text>
+          }
         />
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  searchRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
-  input: { flex: 1, padding: 14, borderRadius: 14 },
-  btnBuscar: { paddingHorizontal: 18, borderRadius: 14, justifyContent: "center" },
-  card: { flexDirection: "row", padding: 14, borderRadius: 18, marginBottom: 12 },
-  thumb: { width: 72, height: 108, borderRadius: 10, marginRight: 12 },
-  info: { flex: 1, justifyContent: "space-between" },
-  titulo: { fontSize: 16, fontWeight: "700" },
-  btn: { marginTop: 8, padding: 8, borderRadius: 20, alignSelf: "flex-start" },
+  searchContainer: { flexDirection: "row", padding: 16, gap: 8 },
+  input: { flex: 1, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, height: 44 },
+  buscarBtn: { paddingHorizontal: 16, justifyContent: "center", borderRadius: 12 },
+  card: { flexDirection: "row", padding: 14, borderRadius: 16, marginBottom: 12 },
+  thumb: { width: 60, height: 90, borderRadius: 8 },
+  botao: { marginTop: 8, padding: 8, borderRadius: 12, alignItems: "center" },
+  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
 });

@@ -1,4 +1,3 @@
-// serviços de feed (mock)
 export let feedMock: any[] = [];
 
 export async function listarFeed() {

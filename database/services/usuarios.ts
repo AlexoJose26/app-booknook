@@ -1,4 +1,3 @@
-// serviços de usuários (mock)
 export let usuariosMock: any[] = [];
 
 export async function atualizarFotoPerfil(usuarioId: string, fotoUri: string) {

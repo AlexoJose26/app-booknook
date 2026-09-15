@@ -1,15 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { View, Text, StyleSheet, SafeAreaView } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemeProviderCustom, useThemeCustom } from "@/contexts/ThemeContext";
 import { LivrosProvider } from "@/contexts/LivrosContext";
 import { UsuarioProvider } from "@/contexts/UsuarioContext";
 import { runMigrations } from "@/database/migrations";
-
-export const unstable_settings = { anchor: "(tabs)" };
 
 export default function RootLayout() {
   const [dbReady, setDbReady] = useState(false);
@@ -32,20 +30,22 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProviderCustom>
-      <UsuarioProvider>
-        <LivrosProvider>
-          <ThemeWrapper />
-        </LivrosProvider>
-      </UsuarioProvider>
-    </ThemeProviderCustom>
+    <SafeAreaProvider>
+      <ThemeProviderCustom>
+        <UsuarioProvider>
+          <LivrosProvider>
+            <ThemeWrapper />
+          </LivrosProvider>
+        </UsuarioProvider>
+      </ThemeProviderCustom>
+    </SafeAreaProvider>
   );
 }
 
 function ThemeWrapper() {
   const { theme } = useThemeCustom();
-  const isDark = theme === "dark";
   const insets = useSafeAreaInsets();
+  const isDark = theme === "dark";
 
   return (
     <SafeAreaView

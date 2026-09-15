@@ -1,4 +1,3 @@
-// serviços de críticas e feed (mock)
 export let criticasMock: any[] = [];
 export let feedMock: any[] = [];
 
@@ -18,7 +17,7 @@ export async function criarCritica(
   };
   criticasMock.push(nova);
 
-  const livroTitulo = "Livro"; // mock
+  const livroTitulo = "Livro"; 
 
   feedMock.push({
     usuario_id,
