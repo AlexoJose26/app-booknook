@@ -1,6 +1,6 @@
 import { and, count, desc, eq } from "drizzle-orm";
 
-import { db } from "@/database/db";
+import { getDb } from "@/database/db";
 
 import {
   comentarios,
@@ -37,13 +37,11 @@ export type FeedItem = {
   livro_id: string | null;
   critica_id: number | null;
   createdAt: string;
-
   usuario?: {
     id: string;
     nome: string;
     foto_perfil: string | null;
   } | null;
-
   livro?: {
     id: string;
     titulo: string;
@@ -69,13 +67,15 @@ export async function criarComentario(
   criticaId: number,
   texto: string,
 ): Promise<Comentario> {
+  const database = await getDb();
+
   const textoLimpo = texto.trim();
 
   if (!textoLimpo) {
     throw new Error("O comentário não pode estar vazio.");
   }
 
-  const critica = await db
+  const critica = await database
     .select({
       id: criticas.id,
     })
@@ -87,7 +87,7 @@ export async function criarComentario(
     throw new Error("A crítica não existe.");
   }
 
-  const usuario = await db
+  const usuario = await database
     .select({
       id: usuarios.id,
       nome: usuarios.nome,
@@ -103,7 +103,7 @@ export async function criarComentario(
 
   const createdAt = new Date().toISOString();
 
-  const resultado = await db
+  const resultado = await database
     .insert(comentarios)
     .values({
       usuario_id: usuarioId,
@@ -128,14 +128,15 @@ export async function criarComentario(
 export async function listarComentarios(
   criticaId: number,
 ): Promise<Comentario[]> {
-  const resultado = await db
+  const database = await getDb();
+
+  const resultado = await database
     .select({
       id: comentarios.id,
       usuario_id: comentarios.usuario_id,
       critica_id: comentarios.critica_id,
       texto: comentarios.texto,
       createdAt: comentarios.createdAt,
-
       usuario: {
         id: usuarios.id,
         nome: usuarios.nome,
@@ -156,7 +157,9 @@ export async function listarComentarios(
 export async function contarComentarios(
   criticaId: number,
 ): Promise<number> {
-  const resultado = await db
+  const database = await getDb();
+
+  const resultado = await database
     .select({
       total: count(),
     })
@@ -170,7 +173,9 @@ export async function toggleCurtida(
   usuarioId: string,
   criticaId: number,
 ): Promise<boolean> {
-  const existente = await db
+  const database = await getDb();
+
+  const existente = await database
     .select({
       usuario_id: curtidas.usuario_id,
       critica_id: curtidas.critica_id,
@@ -185,7 +190,7 @@ export async function toggleCurtida(
     .limit(1);
 
   if (existente.length > 0) {
-    await db
+    await database
       .delete(curtidas)
       .where(
         and(
@@ -197,7 +202,7 @@ export async function toggleCurtida(
     return false;
   }
 
-  await db.insert(curtidas).values({
+  await database.insert(curtidas).values({
     usuario_id: usuarioId,
     critica_id: criticaId,
     createdAt: new Date().toISOString(),
@@ -210,7 +215,9 @@ export async function curtiuCritica(
   usuarioId: string,
   criticaId: number,
 ): Promise<boolean> {
-  const resultado = await db
+  const database = await getDb();
+
+  const resultado = await database
     .select({
       usuario_id: curtidas.usuario_id,
     })
@@ -229,7 +236,9 @@ export async function curtiuCritica(
 export async function contarCurtidas(
   criticaId: number,
 ): Promise<number> {
-  const resultado = await db
+  const database = await getDb();
+
+  const resultado = await database
     .select({
       total: count(),
     })
@@ -261,7 +270,9 @@ export async function obterEstatisticasCritica(
 }
 
 export async function listarFeed(): Promise<FeedItem[]> {
-  const resultado = await db
+  const database = await getDb();
+
+  const resultado = await database
     .select({
       id: feed.id,
       usuario_id: feed.usuario_id,
@@ -269,13 +280,11 @@ export async function listarFeed(): Promise<FeedItem[]> {
       livro_id: feed.livro_id,
       critica_id: feed.critica_id,
       createdAt: feed.createdAt,
-
       usuario: {
         id: usuarios.id,
         nome: usuarios.nome,
         foto_perfil: usuarios.foto_perfil,
       },
-
       livro: {
         id: livros.id,
         titulo: livros.titulo,
@@ -308,7 +317,9 @@ export async function criarFeedItem({
   livro_id?: string;
   critica_id?: number;
 }): Promise<FeedItem> {
-  const resultado = await db
+  const database = await getDb();
+
+  const resultado = await database
     .insert(feed)
     .values({
       usuario_id,
@@ -327,7 +338,7 @@ export async function criarFeedItem({
     );
   }
 
-  const feedCompleto = await db
+  const feedCompleto = await database
     .select({
       id: feed.id,
       usuario_id: feed.usuario_id,
@@ -335,13 +346,11 @@ export async function criarFeedItem({
       livro_id: feed.livro_id,
       critica_id: feed.critica_id,
       createdAt: feed.createdAt,
-
       usuario: {
         id: usuarios.id,
         nome: usuarios.nome,
         foto_perfil: usuarios.foto_perfil,
       },
-
       livro: {
         id: livros.id,
         titulo: livros.titulo,
@@ -374,7 +383,9 @@ export async function atualizarFotoPerfil(
   usuarioId: string,
   fotoUri: string,
 ): Promise<Usuario | null> {
-  await db
+  const database = await getDb();
+
+  await database
     .update(usuarios)
     .set({
       foto_perfil: fotoUri,
@@ -393,7 +404,9 @@ export async function buscarUsuarioPorNome(
     return null;
   }
 
-  const resultado = await db
+  const database = await getDb();
+
+  const resultado = await database
     .select({
       id: usuarios.id,
       nome: usuarios.nome,
@@ -409,7 +422,9 @@ export async function buscarUsuarioPorNome(
 export async function buscarUsuarioPorId(
   usuarioId: string,
 ): Promise<Usuario | null> {
-  const resultado = await db
+  const database = await getDb();
+
+  const resultado = await database
     .select({
       id: usuarios.id,
       nome: usuarios.nome,
@@ -441,7 +456,9 @@ export async function criarUsuario(
     return existente;
   }
 
-  const resultado = await db
+  const database = await getDb();
+
+  const resultado = await database
     .insert(usuarios)
     .values({
       id,

@@ -1,6 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-
 import {
   useCallback,
   useEffect,
@@ -8,7 +7,6 @@ import {
   useRef,
   useState,
 } from "react";
-
 import {
   ActivityIndicator,
   Alert,
@@ -24,16 +22,13 @@ import {
   View,
   useColorScheme,
 } from "react-native";
-
 import { WebView } from "react-native-webview";
 
 import { useLivros } from "@/contexts/LivrosContext";
 import { useThemeCustom } from "@/contexts/ThemeContext";
 import { useUsuario } from "@/contexts/UsuarioContext";
-
-import { db } from "@/database/db";
+import { getDb } from "@/database/db";
 import { estantes, livros } from "@/database/schema";
-
 import { eq } from "drizzle-orm";
 
 type StatusLivro = "queroLer" | "lendo" | "lido";
@@ -73,7 +68,6 @@ const STATUS_CONFIG: Record<
     softLight: "#EAF2FC",
     softDark: "#1B2B3D",
   },
-
   lendo: {
     label: "Lendo",
     shortLabel: "Lendo",
@@ -83,7 +77,6 @@ const STATUS_CONFIG: Record<
     softLight: "#E7F3FF",
     softDark: "#172C3C",
   },
-
   lido: {
     label: "Lido",
     shortLabel: "Lidos",
@@ -97,13 +90,11 @@ const STATUS_CONFIG: Record<
 
 export default function Estantes() {
   const router = useRouter();
-
   const { theme } = useThemeCustom();
   const { usuario } = useUsuario();
   const { livroAbrirAutomatico } = useLivros();
 
   const colorScheme = useColorScheme();
-
   const isDark = theme === "dark" || colorScheme === "dark";
 
   const colors = useMemo(
@@ -113,50 +104,36 @@ export default function Estantes() {
           background: "#0E1114",
           card: "#15191D",
           cardSecondary: "#1B2025",
-
           text: "#F5F6F7",
           secondary: "#AAB3BC",
-
           primary: "#4B9BFF",
           primaryDark: FACEBOOK_BLUE_DARK,
           primaryDeep: FACEBOOK_BLUE_DEEP,
-
           border: "#2A3036",
-
           soft: "#17283B",
           muted: "#1C2732",
           input: "#12171B",
-
           white: "#FFFFFF",
-
           success: "#78B9F0",
           successSoft: "#183047",
-
           danger: "#EF6B6B",
         }
         : {
           background: "#F0F2F5",
           card: "#FFFFFF",
           cardSecondary: "#F7F8FA",
-
           text: "#1C1E21",
           secondary: "#65676B",
-
           primary: FACEBOOK_BLUE,
           primaryDark: FACEBOOK_BLUE_DARK,
           primaryDeep: FACEBOOK_BLUE_DEEP,
-
           border: "#DADDE1",
-
           soft: "#E7F3FF",
           muted: "#EAF2FB",
           input: "#F0F2F5",
-
           white: "#FFFFFF",
-
           success: "#2878C7",
           successSoft: "#E8F4FF",
-
           danger: "#D94B4B",
         },
     [isDark]
@@ -173,12 +150,8 @@ export default function Estantes() {
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-
-  const [webViewLoading, setWebViewLoading] =
-    useState(true);
-
-  const [concluindoLeitura, setConcluindoLeitura] =
-    useState(false);
+  const [webViewLoading, setWebViewLoading] = useState(true);
+  const [concluindoLeitura, setConcluindoLeitura] = useState(false);
 
   const [
     mostrarControlesLeitor,
@@ -202,7 +175,9 @@ export default function Estantes() {
 
       try {
         if (livro.status === "queroLer") {
-          await db
+          const database = await getDb();
+
+          await database
             .update(estantes)
             .set({
               status: "lendo",
@@ -256,7 +231,9 @@ export default function Estantes() {
       }
 
       try {
-        const dados = await db
+        const database = await getDb();
+
+        const dados = await database
           .select({
             estanteId: estantes.id,
             status: estantes.status,
@@ -351,7 +328,9 @@ export default function Estantes() {
       status: StatusLivro
     ) => {
       try {
-        await db
+        const database = await getDb();
+
+        await database
           .update(estantes)
           .set({
             status,
@@ -730,10 +709,9 @@ export default function Estantes() {
               style={[
                 styles.readingNotice,
                 {
-                  backgroundColor:
-                    isDark
-                      ? config.softDark
-                      : config.softLight,
+                  backgroundColor: isDark
+                    ? config.softDark
+                    : config.softLight,
                 },
               ]}
             >
@@ -851,7 +829,6 @@ export default function Estantes() {
                       borderColor: ativo
                         ? activeColor
                         : colors.border,
-
                       backgroundColor: ativo
                         ? activeBackground
                         : colors.card,
@@ -1024,9 +1001,7 @@ export default function Estantes() {
                   />
                 </View>
 
-                <View
-                  style={styles.pageHeaderText}
-                >
+                <View style={styles.pageHeaderText}>
                   <Text
                     style={[
                       styles.pageTitle,
@@ -1042,8 +1017,7 @@ export default function Estantes() {
                     style={[
                       styles.pageSubtitle,
                       {
-                        color:
-                          colors.secondary,
+                        color: colors.secondary,
                       },
                     ]}
                   >
@@ -1701,7 +1675,6 @@ export default function Estantes() {
                       concluindoLeitura
                         ? colors.primaryDark
                         : colors.primary,
-
                     opacity:
                       concluindoLeitura
                         ? 0.85

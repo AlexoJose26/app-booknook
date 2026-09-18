@@ -9,7 +9,7 @@ import {
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { db } from "@/database/db";
+import { getDb } from "@/database/db";
 
 import { usuarios } from "@/database/schema";
 
@@ -55,7 +55,9 @@ export const UsuarioProvider = ({
         throw new Error("O usuário não possui um nome válido.");
       }
 
-      const usuarioExistente = await db
+      const database = await getDb();
+
+      const usuarioExistente = await database
         .select({
           id: usuarios.id,
         })
@@ -64,7 +66,7 @@ export const UsuarioProvider = ({
         .limit(1);
 
       if (usuarioExistente.length === 0) {
-        await db.insert(usuarios).values({
+        await database.insert(usuarios).values({
           id: usuarioAtual.id,
           nome: usuarioAtual.nome.trim(),
           senha: "",
@@ -82,7 +84,7 @@ export const UsuarioProvider = ({
       /**
        * Mantém os dados básicos sincronizados.
        */
-      await db
+      await database
         .update(usuarios)
         .set({
           nome: usuarioAtual.nome.trim(),
@@ -117,7 +119,6 @@ export const UsuarioProvider = ({
         );
 
         await AsyncStorage.removeItem("usuarioLogado");
-
         setUsuario(null);
 
         return;
@@ -129,7 +130,6 @@ export const UsuarioProvider = ({
         );
 
         await AsyncStorage.removeItem("usuarioLogado");
-
         setUsuario(null);
 
         return;
@@ -138,8 +138,7 @@ export const UsuarioProvider = ({
       const usuarioNormalizado: Usuario = {
         id: String(usuarioSalvo.id),
         nome: String(usuarioSalvo.nome),
-        foto_perfil:
-          usuarioSalvo.foto_perfil || null,
+        foto_perfil: usuarioSalvo.foto_perfil || null,
       };
 
       /**

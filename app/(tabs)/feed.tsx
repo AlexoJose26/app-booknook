@@ -29,7 +29,7 @@ import {
 } from "react-native";
 
 import { useUsuario } from "@/contexts/UsuarioContext";
-import { db } from "@/database/db";
+import { getDb } from "@/database/db";
 import {
   criticas,
   estantes,
@@ -191,9 +191,9 @@ export default function Feed() {
 
   const colors = useMemo(
     () => ({
-      background: isDark ? "#08111F" : "#EAF2FB",
-      card: isDark ? "#111C2C" : "#FFFFFF",
-      cardSecondary: isDark ? "#18263A" : "#F5F8FC",
+      background: isDark ? "#111827" : "#F0F2F5",
+      card: isDark ? "#172033" : "#FFFFFF",
+      cardSecondary: isDark ? "#202B3D" : "#F7F8FA",
 
       text: isDark ? "#F5F7FA" : "#1C1E21",
       secondary: isDark ? "#A8B3C2" : "#65676B",
@@ -205,7 +205,7 @@ export default function Feed() {
       border: isDark ? "#29384D" : "#DADDE1",
       softBorder: isDark ? "#26364A" : "#E4E6EB",
 
-      muted: isDark ? "#1C2A3D" : "#E4E6EB",
+      muted: isDark ? "#273449" : "#E4E6EB",
       mutedText: isDark ? "#8997A9" : "#65676B",
 
       white: "#FFFFFF",
@@ -218,7 +218,7 @@ export default function Feed() {
       avatarBackground: isDark ? "#243752" : "#DCE7F7",
       avatarText: isDark ? "#BBD6FF" : "#1877F2",
 
-      actionBackground: isDark ? "#18263A" : "#F0F2F5",
+      actionBackground: isDark ? "#202B3D" : "#F0F2F5",
       actionText: isDark ? "#C7D0DC" : "#65676B",
 
       modalOverlay: "rgba(0,0,0,0.55)",
@@ -329,7 +329,9 @@ export default function Feed() {
         );
       }
 
-      const resultado = await db
+      const database = await getDb();
+
+      const resultado = await database
         .select()
         .from(usuarios)
         .where(
@@ -677,22 +679,18 @@ export default function Feed() {
           ...estatisticasLivros,
         };
 
-        if (
-          livrosDoFeed.length
+        for (
+          const item of livrosDoFeed
         ) {
-          for (
-            const item of livrosDoFeed
-          ) {
-            const chave =
-              `livro-${item.data.id}`;
+          const chave =
+            `livro-${item.data.id}`;
 
-            if (!mapa[chave]) {
-              mapa[chave] = {
-                curtidas: 0,
-                comentarios: 0,
-                curtiu: false,
-              };
-            }
+          if (!mapa[chave]) {
+            mapa[chave] = {
+              curtidas: 0,
+              comentarios: 0,
+              curtiu: false,
+            };
           }
         }
 
@@ -708,9 +706,7 @@ export default function Feed() {
                   try {
                     const estatistica =
                       await obterEstatisticasCritica(
-                        Number(
-                          data.id,
-                        ),
+                        Number(data.id),
                         usuarioId ??
                         undefined,
                       );
@@ -1035,8 +1031,10 @@ export default function Feed() {
   const carregarFeed =
     useCallback(async () => {
       try {
+        const database = await getDb();
+
         const livrosResultado =
-          await db
+          await database
             .select()
             .from(estantes)
             .innerJoin(
@@ -1125,7 +1123,7 @@ export default function Feed() {
 
         try {
           const criticasResultado =
-            await db
+            await database
               .select()
               .from(criticas)
               .innerJoin(
@@ -1346,6 +1344,16 @@ export default function Feed() {
       carregarPerfilAtual,
       carregarFeed,
     ]);
+
+  const nomeAtual =
+    perfilAtual?.nome ||
+    usuario?.nome ||
+    "Leitor";
+
+  const fotoAtual =
+    perfilAtual?.foto_perfil ??
+    usuario?.foto_perfil ??
+    null;
 
   const alternarCurtida =
     useCallback(
@@ -1819,7 +1827,7 @@ export default function Feed() {
           const dados =
             item.data;
 
-          const campos = [
+          const campos: string[] = [
             dados.livroTitulo,
             dados.livroAutor,
             dados.usuarioNome,
@@ -1922,8 +1930,7 @@ export default function Feed() {
           `livro-${item.id}`;
 
         const estatistica =
-          estatisticas[chave] ??
-          {
+          estatisticas[chave] ?? {
             curtidas: 0,
             comentarios: 0,
             curtiu: false,
@@ -2386,8 +2393,7 @@ export default function Feed() {
           `critica-${item.id}`;
 
         const estatistica =
-          estatisticas[chave] ??
-          {
+          estatisticas[chave] ?? {
             curtidas: 0,
             comentarios: 0,
             curtiu: false,
@@ -2897,16 +2903,6 @@ export default function Feed() {
     usuario?.nome,
     usuario?.foto_perfil,
   ]);
-
-  const nomeAtual =
-    perfilAtual?.nome ||
-    usuario?.nome ||
-    "Leitor";
-
-  const fotoAtual =
-    perfilAtual?.foto_perfil ??
-    usuario?.foto_perfil ??
-    null;
 
   const ListHeader =
     useMemo(

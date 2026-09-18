@@ -28,7 +28,7 @@ import { useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import { useThemeCustom } from "@/contexts/ThemeContext";
 import { useUsuario } from "@/contexts/UsuarioContext";
-import { db } from "@/database/db";
+import { getDb } from "@/database/db";
 
 import {
   criticas,
@@ -219,7 +219,9 @@ export default function Criticas({
     try {
       setCarregando(true);
 
-      const livrosLidos = await db
+      const database = await getDb();
+
+      const livrosLidos = await database
         .select({
           id: livros.id,
           titulo: livros.titulo,
@@ -241,7 +243,7 @@ export default function Criticas({
       const resultados = await Promise.all(
         livrosParaCriticar.map(async (livro) => {
           try {
-            const res = await db
+            const res = await database
               .select({
                 id: criticas.id,
                 usuario_id: criticas.usuario_id,
@@ -710,7 +712,9 @@ export default function Criticas({
       agora: string
     ) => {
       try {
-        const feedExistente = await db
+        const database = await getDb();
+
+        const feedExistente = await database
           .select({
             id: feed.id,
           })
@@ -721,7 +725,7 @@ export default function Criticas({
           .limit(1);
 
         if (feedExistente.length === 0) {
-          await db.insert(feed).values({
+          await database.insert(feed).values({
             usuario_id: usuario!.id,
             tipo: "critica",
             livro_id: livroId,
@@ -783,8 +787,10 @@ export default function Criticas({
       const agora =
         new Date().toISOString();
 
+      const database = await getDb();
+
       if (criticaAtual) {
-        await db
+        await database
           .update(criticas)
           .set({
             texto: textoLimpo,
@@ -809,7 +815,7 @@ export default function Criticas({
           "Sua crítica foi atualizada com sucesso."
         );
       } else {
-        const resultado = await db
+        const resultado = await database
           .insert(criticas)
           .values({
             usuario_id: usuario.id,
@@ -901,7 +907,9 @@ export default function Criticas({
                   true
                 );
 
-                await db
+                const database = await getDb();
+
+                await database
                   .delete(criticas)
                   .where(
                     eq(
