@@ -1,22 +1,26 @@
-import React, { useState } from "react";
+import { db } from "@/database/db";
+import { usuarios } from "@/database/schema";
+import { eq } from "drizzle-orm";
+import { useRouter } from "expo-router";
+import { useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
   Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useColorScheme,
 } from "react-native";
-import { useRouter } from "expo-router";
-import { db } from "@/database/db";
-import { usuarios } from "@/database/schema";
-import { eq } from "drizzle-orm";
 
 export default function Register() {
   const router = useRouter();
+  const colorScheme = useColorScheme();
+
+  const isDark = colorScheme === "dark";
 
   const [nome, setNome] = useState("");
   const [senha, setSenha] = useState("");
@@ -34,7 +38,6 @@ export default function Register() {
     }
 
     try {
-
       const existe = await db
         .select()
         .from(usuarios)
@@ -56,7 +59,6 @@ export default function Register() {
       await db.insert(usuarios).values(novoUsuario);
 
       Alert.alert("Sucesso", "Usuário criado com sucesso!");
-
       router.push("/login");
     } catch (err) {
       console.error(err);
@@ -64,44 +66,208 @@ export default function Register() {
     }
   };
 
+  const colors = {
+    background: isDark ? "#0B1020" : "#F8FAFC",
+    card: isDark ? "#111827" : "#FFFFFF",
+    cardBorder: isDark ? "#1F2937" : "#E2E8F0",
+
+    title: isDark ? "#FFFFFF" : "#0F172A",
+    subtitle: isDark ? "#A8B1C2" : "#64748B",
+
+    label: isDark ? "#F8FAFC" : "#1E293B",
+
+    inputBackground: isDark ? "#1E293B" : "#F8FAFC",
+    inputBorder: isDark ? "#334155" : "#CBD5E1",
+    inputText: isDark ? "#FFFFFF" : "#0F172A",
+    placeholder: isDark ? "#94A3B8" : "#64748B",
+
+    footerText: isDark ? "#94A3B8" : "#64748B",
+    link: isDark ? "#7C8CF8" : "#405DE6",
+  };
+
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.title}>Cadastro</Text>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.cardBorder,
+            },
+          ]}
+        >
+          <View style={styles.header}>
+            <View style={styles.logoCircle}>
+              <Text style={styles.logoText}>M</Text>
+            </View>
 
-        <TextInput
-          placeholder="Nome de usuário"
-          style={styles.input}
-          value={nome}
-          onChangeText={setNome}
-        />
-        <TextInput
-          placeholder="Senha"
-          style={styles.input}
-          secureTextEntry
-          value={senha}
-          onChangeText={setSenha}
-        />
-        <TextInput
-          placeholder="Confirmar senha"
-          style={styles.input}
-          secureTextEntry
-          value={confirmar}
-          onChangeText={setConfirmar}
-        />
+            <Text
+              style={[
+                styles.title,
+                {
+                  color: colors.title,
+                },
+              ]}
+            >
+              Criar conta
+            </Text>
 
-        <TouchableOpacity style={styles.button} onPress={handleRegister}>
-          <Text style={styles.buttonText}>Criar conta</Text>
-        </TouchableOpacity>
+            <Text
+              style={[
+                styles.subtitle,
+                {
+                  color: colors.subtitle,
+                },
+              ]}
+            >
+              Crie a sua conta para começar a utilizar o MedeaSocial.
+            </Text>
+          </View>
 
-        <View style={styles.footer}>
-          <Text>Já tem conta?</Text>
-          <TouchableOpacity onPress={() => router.push("/login")}>
-            <Text style={styles.link}> Entrar</Text>
-          </TouchableOpacity>
+          <View style={styles.form}>
+            <View style={styles.field}>
+              <Text
+                style={[
+                  styles.label,
+                  {
+                    color: colors.label,
+                  },
+                ]}
+              >
+                Nome de usuário
+              </Text>
+
+              <TextInput
+                placeholder="Digite seu nome de usuário"
+                placeholderTextColor={colors.placeholder}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: colors.inputBorder,
+                    color: colors.inputText,
+                  },
+                ]}
+                value={nome}
+                onChangeText={setNome}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text
+                style={[
+                  styles.label,
+                  {
+                    color: colors.label,
+                  },
+                ]}
+              >
+                Senha
+              </Text>
+
+              <TextInput
+                placeholder="Digite sua senha"
+                placeholderTextColor={colors.placeholder}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: colors.inputBorder,
+                    color: colors.inputText,
+                  },
+                ]}
+                secureTextEntry
+                value={senha}
+                onChangeText={setSenha}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text
+                style={[
+                  styles.label,
+                  {
+                    color: colors.label,
+                  },
+                ]}
+              >
+                Confirmar senha
+              </Text>
+
+              <TextInput
+                placeholder="Digite novamente sua senha"
+                placeholderTextColor={colors.placeholder}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: colors.inputBorder,
+                    color: colors.inputText,
+                  },
+                ]}
+                secureTextEntry
+                value={confirmar}
+                onChangeText={setConfirmar}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={styles.button}
+              onPress={handleRegister}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.buttonText}>Criar conta</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.footer}>
+            <Text
+              style={[
+                styles.footerText,
+                {
+                  color: colors.footerText,
+                },
+              ]}
+            >
+              Já tem uma conta?
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => router.push("/login")}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.link,
+                  {
+                    color: colors.link,
+                  },
+                ]}
+              >
+                {" "}
+                Entrar
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -111,50 +277,115 @@ export default function Register() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
   },
+
   scroll: {
     flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
   },
-  title: {
-    fontSize: 36,
-    fontWeight: "900",
-    color: "#405DE6",
-    marginBottom: 40,
-    textAlign: "center",
-  },
-  input: {
+
+  card: {
     width: "100%",
-    padding: 16,
-    borderRadius: 14,
+    maxWidth: 460,
+    borderRadius: 28,
+    padding: 28,
     borderWidth: 1,
-    borderColor: "#ccc",
-    marginBottom: 16,
-    fontSize: 16,
   },
-  button: {
-    width: "100%",
-    padding: 16,
-    borderRadius: 14,
+
+  header: {
+    alignItems: "center",
+    marginBottom: 32,
+  },
+
+  logoCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: "#405DE6",
     alignItems: "center",
-    marginTop: 8,
+    justifyContent: "center",
+    marginBottom: 18,
   },
+
+  logoText: {
+    color: "#FFFFFF",
+    fontSize: 30,
+    fontWeight: "900",
+  },
+
+  title: {
+    fontSize: 32,
+    fontWeight: "900",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+
+  subtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: "center",
+    maxWidth: 330,
+  },
+
+  form: {
+    width: "100%",
+  },
+
+  field: {
+    width: "100%",
+    marginBottom: 18,
+  },
+
+  label: {
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 8,
+    marginLeft: 3,
+  },
+
+  input: {
+    width: "100%",
+    minHeight: 56,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 15,
+    borderWidth: 1,
+    fontSize: 16,
+  },
+
+  button: {
+    width: "100%",
+    minHeight: 56,
+    paddingHorizontal: 18,
+    borderRadius: 15,
+    backgroundColor: "#405DE6",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+
   buttonText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 18,
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 17,
   },
+
   footer: {
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: 20,
+    alignItems: "center",
+    marginTop: 26,
   },
+
+  footerText: {
+    fontSize: 14,
+  },
+
   link: {
-    color: "#405DE6",
-    fontWeight: "bold",
+    fontSize: 14,
+    fontWeight: "800",
   },
 });
+

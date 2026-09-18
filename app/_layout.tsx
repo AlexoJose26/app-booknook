@@ -1,34 +1,20 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, SafeAreaView } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet, View } from "react-native";
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
-import { ThemeProviderCustom, useThemeCustom } from "@/contexts/ThemeContext";
 import { LivrosProvider } from "@/contexts/LivrosContext";
+import { ThemeProviderCustom, useThemeCustom } from "@/contexts/ThemeContext";
 import { UsuarioProvider } from "@/contexts/UsuarioContext";
-import { runMigrations } from "@/database/migrations";
+
+// Inicializa o banco SQLite antes dos contextos que dependem dele.
+import "@/database/db";
 
 export default function RootLayout() {
-  const [dbReady, setDbReady] = useState(false);
-
-  useEffect(() => {
-    try {
-      runMigrations();
-      setDbReady(true);
-    } catch (err) {
-      console.error("Erro ao preparar banco:", err);
-    }
-  }, []);
-
-  if (!dbReady) {
-    return (
-      <SafeAreaView style={[styles.safeArea, styles.center]}>
-        <Text>Preparando banco de dados…</Text>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaProvider>
       <ThemeProviderCustom>
@@ -45,29 +31,85 @@ export default function RootLayout() {
 function ThemeWrapper() {
   const { theme } = useThemeCustom();
   const insets = useSafeAreaInsets();
+
   const isDark = theme === "dark";
+
+  const backgroundColor = isDark ? "#111827" : "#FDF6E3";
+  const safeAreaColor = isDark ? "#0B1220" : "#FDF6E3";
 
   return (
     <SafeAreaView
       style={[
         styles.safeArea,
-        { paddingTop: insets.top, backgroundColor: isDark ? "#000" : "#fff" },
+        {
+          backgroundColor: safeAreaColor,
+          paddingTop: insets.top,
+        },
       ]}
+      edges={["top", "left", "right"]}
     >
-      <View style={{ flex: 1, backgroundColor: isDark ? "#111827" : "#FDF6E3" }}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="login" />
-          <Stack.Screen name="register" />
-          <Stack.Screen name="(tabs)" />
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor,
+          },
+        ]}
+      >
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            animation: "fade",
+            contentStyle: {
+              backgroundColor,
+            },
+          }}
+        >
+          <Stack.Screen
+            name="index"
+            options={{
+              headerShown: false,
+            }}
+          />
+
+          <Stack.Screen
+            name="login"
+            options={{
+              headerShown: false,
+            }}
+          />
+
+          <Stack.Screen
+            name="register"
+            options={{
+              headerShown: false,
+            }}
+          />
+
+          <Stack.Screen
+            name="(tabs)"
+            options={{
+              headerShown: false,
+            }}
+          />
         </Stack>
       </View>
-      <StatusBar style={isDark ? "light" : "dark"} />
+
+      <StatusBar
+        style={isDark ? "light" : "dark"}
+        backgroundColor={safeAreaColor}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  center: { justifyContent: "center", alignItems: "center" },
+  safeArea: {
+    flex: 1,
+  },
+
+  container: {
+    flex: 1,
+    overflow: "hidden",
+  },
 });
