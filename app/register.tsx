@@ -6,7 +6,6 @@ import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   KeyboardAvoidingView,
   Modal,
@@ -21,18 +20,62 @@ import {
   View,
 } from "react-native";
 
+type FeedbackType = "success" | "error";
+
+type FeedbackState = {
+  visible: boolean;
+  type: FeedbackType;
+  title: string;
+  message: string;
+};
+
+const DB_TIMEOUT = 15000;
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeout: number,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new Error(
+          "O banco de dados demorou demasiado tempo para responder.",
+        ),
+      );
+    }, timeout);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 export default function Register() {
   const router = useRouter();
-
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
   const [nome, setNome] = useState("");
   const [senha, setSenha] = useState("");
   const [confirmar, setConfirmar] = useState("");
+
   const [loading, setLoading] = useState(false);
+
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [mostrarConfirmar, setMostrarConfirmar] = useState(false);
+
+  const [feedback, setFeedback] = useState<FeedbackState>({
+    visible: false,
+    type: "success",
+    title: "",
+    message: "",
+  });
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(25)).current;
@@ -59,19 +102,57 @@ export default function Register() {
     ]).start();
   }, [fadeAnim, logoScale, slideAnim]);
 
+  const showFeedback = (
+    type: FeedbackType,
+    title: string,
+    message: string,
+  ) => {
+    setFeedback({
+      visible: true,
+      type,
+      title,
+      message,
+    });
+  };
+
+  const closeFeedback = () => {
+    setFeedback((current) => ({
+      ...current,
+      visible: false,
+    }));
+  };
+
+  const handleFeedbackAction = () => {
+    if (feedback.type === "success") {
+      closeFeedback();
+
+      setTimeout(() => {
+        router.replace("/login");
+      }, 100);
+    } else {
+      closeFeedback();
+    }
+  };
+
   const handleRegister = async () => {
+    if (loading) {
+      return;
+    }
+
     const nomeLimpo = nome.trim();
 
     if (!nomeLimpo || !senha || !confirmar) {
-      Alert.alert(
-        "Atenção",
+      showFeedback(
+        "error",
+        "Campos obrigatórios",
         "Preencha todos os campos para criar a sua conta.",
       );
       return;
     }
 
     if (nomeLimpo.length < 3) {
-      Alert.alert(
+      showFeedback(
+        "error",
         "Nome de usuário inválido",
         "O nome de usuário deve ter pelo menos 3 caracteres.",
       );
@@ -79,7 +160,8 @@ export default function Register() {
     }
 
     if (senha.length < 4) {
-      Alert.alert(
+      showFeedback(
+        "error",
         "Senha inválida",
         "A senha deve ter pelo menos 4 caracteres.",
       );
@@ -87,7 +169,8 @@ export default function Register() {
     }
 
     if (senha !== confirmar) {
-      Alert.alert(
+      showFeedback(
+        "error",
         "Senhas diferentes",
         "A confirmação da senha não corresponde à senha informada.",
       );
@@ -97,47 +180,101 @@ export default function Register() {
     try {
       setLoading(true);
 
-      const database = await getDb();
+      console.log("Iniciando criação da conta...");
 
-      const existe = await database
-        .select()
-        .from(usuarios)
-        .where(eq(usuarios.nome, nomeLimpo))
-        .limit(1);
+      const database = await withTimeout(
+        getDb(),
+        DB_TIMEOUT,
+      );
 
-      if (existe.length > 0) {
-        Alert.alert(
+      console.log("Banco de dados disponível.");
+
+      const existente = await withTimeout(
+        database
+          .select({
+            id: usuarios.id,
+            nome: usuarios.nome,
+          })
+          .from(usuarios)
+          .where(eq(usuarios.nome, nomeLimpo))
+          .limit(1),
+        DB_TIMEOUT,
+      );
+
+      if (existente.length > 0) {
+        showFeedback(
+          "error",
           "Usuário já existe",
-          "Esse nome de usuário já está registado. Escolha outro.",
+          "Esse nome de usuário já está registado. Escolha outro nome.",
         );
+
         return;
       }
 
       const novoUsuario = {
-        id: Date.now().toString(),
+        id:
+          typeof globalThis.crypto !== "undefined" &&
+            typeof globalThis.crypto.randomUUID === "function"
+            ? globalThis.crypto.randomUUID()
+            : `${Date.now()}-${Math.random()
+              .toString(36)
+              .substring(2, 10)}`,
         nome: nomeLimpo,
         senha,
         foto_perfil: null,
       };
 
-      await database.insert(usuarios).values(novoUsuario);
+      console.log("Criando novo usuário:", novoUsuario.id);
 
-      Alert.alert(
-        "Conta criada!",
-        "A sua conta foi criada com sucesso. Agora pode entrar no BookNook.",
-        [
-          {
-            text: "Entrar",
-            onPress: () => router.replace("/login"),
-          },
-        ],
+      await withTimeout(
+        database.insert(usuarios).values(novoUsuario),
+        DB_TIMEOUT,
       );
-    } catch (err) {
-      console.error("Erro ao criar usuário:", err);
 
-      Alert.alert(
-        "Erro",
-        "Não foi possível criar a conta. Tente novamente.",
+      console.log("Conta criada com sucesso.");
+
+      setNome("");
+      setSenha("");
+      setConfirmar("");
+      setMostrarSenha(false);
+      setMostrarConfirmar(false);
+
+      showFeedback(
+        "success",
+        "Conta criada com sucesso!",
+        "A tua conta foi criada. Agora podes entrar no BookNook e começar a descobrir novas histórias.",
+      );
+    } catch (error) {
+      console.error(
+        "Erro ao criar usuário:",
+        error,
+      );
+
+      let mensagem =
+        "Não foi possível criar a conta. Tente novamente.";
+
+      if (
+        error instanceof Error &&
+        error.message.includes(
+          "demorou demasiado",
+        )
+      ) {
+        mensagem =
+          "O banco de dados demorou demasiado tempo para responder. Verifica a ligação e tenta novamente.";
+      } else if (
+        error instanceof Error &&
+        error.message
+      ) {
+        console.error(
+          "Detalhes do erro:",
+          error.message,
+        );
+      }
+
+      showFeedback(
+        "error",
+        "Não foi possível criar a conta",
+        mensagem,
       );
     } finally {
       setLoading(false);
@@ -145,47 +282,102 @@ export default function Register() {
   };
 
   const colors = {
-    background: isDark ? "#070B18" : "#F5F7FF",
+    background: isDark
+      ? "#070B18"
+      : "#F5F7FF",
 
-    card: isDark ? "#10172A" : "#FFFFFF",
-    cardBorder: isDark ? "#1E293B" : "#E5E7EB",
+    card: isDark
+      ? "#10172A"
+      : "#FFFFFF",
 
-    title: isDark ? "#FFFFFF" : "#111827",
-    subtitle: isDark ? "#9CA8BF" : "#64748B",
+    cardBorder: isDark
+      ? "#1E293B"
+      : "#E5E7EB",
 
-    label: isDark ? "#E8ECF5" : "#1E293B",
+    title: isDark
+      ? "#FFFFFF"
+      : "#111827",
 
-    inputBackground: isDark ? "#151E33" : "#F8FAFC",
-    inputBorder: isDark ? "#293750" : "#DDE3EE",
-    inputText: isDark ? "#FFFFFF" : "#0F172A",
-    placeholder: isDark ? "#71809A" : "#94A3B8",
+    subtitle: isDark
+      ? "#9CA8BF"
+      : "#64748B",
+
+    label: isDark
+      ? "#E8ECF5"
+      : "#1E293B",
+
+    inputBackground: isDark
+      ? "#151E33"
+      : "#F8FAFC",
+
+    inputBorder: isDark
+      ? "#293750"
+      : "#DDE3EE",
+
+    inputText: isDark
+      ? "#FFFFFF"
+      : "#0F172A",
+
+    placeholder: isDark
+      ? "#71809A"
+      : "#94A3B8",
 
     link: "#405DE6",
 
-    iconBackground: isDark ? "#192344" : "#EEF2FF",
+    iconBackground: isDark
+      ? "#192344"
+      : "#EEF2FF",
 
     loadingBackground: isDark
-      ? "rgba(2, 6, 23, 0.82)"
-      : "rgba(15, 23, 42, 0.48)",
+      ? "rgba(2, 6, 23, 0.88)"
+      : "rgba(15, 23, 42, 0.55)",
+
+    success: "#16A34A",
+
+    successBackground: isDark
+      ? "#0F291A"
+      : "#F0FDF4",
+
+    error: "#DC2626",
+
+    errorBackground: isDark
+      ? "#301416"
+      : "#FEF2F2",
   };
+
+  const isSuccess =
+    feedback.type === "success";
 
   return (
     <KeyboardAvoidingView
       style={[
         styles.container,
         {
-          backgroundColor: colors.background,
+          backgroundColor:
+            colors.background,
         },
       ]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={
+        Platform.OS === "ios"
+          ? "padding"
+          : undefined
+      }
     >
       <StatusBar
-        barStyle={isDark ? "light-content" : "dark-content"}
-        backgroundColor={colors.background}
+        barStyle={
+          isDark
+            ? "light-content"
+            : "dark-content"
+        }
+        backgroundColor={
+          colors.background
+        }
       />
 
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={
+          styles.scroll
+        }
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -206,7 +398,12 @@ export default function Register() {
             styles.content,
             {
               opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
+              transform: [
+                {
+                  translateY:
+                    slideAnim,
+                },
+              ],
             },
           ]}
         >
@@ -214,15 +411,27 @@ export default function Register() {
             style={[
               styles.logoWrapper,
               {
-                transform: [{ scale: logoScale }],
+                transform: [
+                  {
+                    scale: logoScale,
+                  },
+                ],
               },
             ]}
           >
-            <View style={styles.logoCircle}>
-              <Text style={styles.logoText}>B</Text>
+            <View
+              style={styles.logoCircle}
+            >
+              <Text
+                style={styles.logoText}
+              >
+                B
+              </Text>
             </View>
 
-            <View style={styles.logoDot} />
+            <View
+              style={styles.logoDot}
+            />
           </Animated.View>
 
           <View style={styles.header}>
@@ -241,12 +450,14 @@ export default function Register() {
               style={[
                 styles.subtitle,
                 {
-                  color: colors.subtitle,
+                  color:
+                    colors.subtitle,
                 },
               ]}
             >
-              Junta-te ao BookNook e começa a descobrir, ler e partilhar
-              novas histórias.
+              Junta-te ao BookNook e
+              começa a descobrir, ler e
+              partilhar novas histórias.
             </Text>
           </View>
 
@@ -254,8 +465,10 @@ export default function Register() {
             style={[
               styles.card,
               {
-                backgroundColor: colors.card,
-                borderColor: colors.cardBorder,
+                backgroundColor:
+                  colors.card,
+                borderColor:
+                  colors.cardBorder,
               },
             ]}
           >
@@ -265,7 +478,8 @@ export default function Register() {
                   style={[
                     styles.label,
                     {
-                      color: colors.label,
+                      color:
+                        colors.label,
                     },
                   ]}
                 >
@@ -276,8 +490,10 @@ export default function Register() {
                   style={[
                     styles.inputWrapper,
                     {
-                      backgroundColor: colors.inputBackground,
-                      borderColor: colors.inputBorder,
+                      backgroundColor:
+                        colors.inputBackground,
+                      borderColor:
+                        colors.inputBorder,
                     },
                   ]}
                 >
@@ -285,20 +501,30 @@ export default function Register() {
                     style={[
                       styles.inputIcon,
                       {
-                        backgroundColor: colors.iconBackground,
+                        backgroundColor:
+                          colors.iconBackground,
                       },
                     ]}
                   >
-                    <Text style={styles.inputIconText}>@</Text>
+                    <Text
+                      style={
+                        styles.inputIconText
+                      }
+                    >
+                      @
+                    </Text>
                   </View>
 
                   <TextInput
                     placeholder="Escolha um nome de usuário"
-                    placeholderTextColor={colors.placeholder}
+                    placeholderTextColor={
+                      colors.placeholder
+                    }
                     style={[
                       styles.input,
                       {
-                        color: colors.inputText,
+                        color:
+                          colors.inputText,
                       },
                     ]}
                     value={nome}
@@ -317,7 +543,8 @@ export default function Register() {
                   style={[
                     styles.label,
                     {
-                      color: colors.label,
+                      color:
+                        colors.label,
                     },
                   ]}
                 >
@@ -328,8 +555,10 @@ export default function Register() {
                   style={[
                     styles.inputWrapper,
                     {
-                      backgroundColor: colors.inputBackground,
-                      borderColor: colors.inputBorder,
+                      backgroundColor:
+                        colors.inputBackground,
+                      borderColor:
+                        colors.inputBorder,
                     },
                   ]}
                 >
@@ -337,23 +566,35 @@ export default function Register() {
                     style={[
                       styles.inputIcon,
                       {
-                        backgroundColor: colors.iconBackground,
+                        backgroundColor:
+                          colors.iconBackground,
                       },
                     ]}
                   >
-                    <Text style={styles.inputIconText}>•</Text>
+                    <Text
+                      style={
+                        styles.inputIconText
+                      }
+                    >
+                      •
+                    </Text>
                   </View>
 
                   <TextInput
                     placeholder="Crie uma senha"
-                    placeholderTextColor={colors.placeholder}
+                    placeholderTextColor={
+                      colors.placeholder
+                    }
                     style={[
                       styles.input,
                       {
-                        color: colors.inputText,
+                        color:
+                          colors.inputText,
                       },
                     ]}
-                    secureTextEntry={!mostrarSenha}
+                    secureTextEntry={
+                      !mostrarSenha
+                    }
                     value={senha}
                     onChangeText={setSenha}
                     autoCapitalize="none"
@@ -364,8 +605,15 @@ export default function Register() {
                   />
 
                   <TouchableOpacity
-                    style={styles.showPassword}
-                    onPress={() => setMostrarSenha((value) => !value)}
+                    style={
+                      styles.showPassword
+                    }
+                    onPress={() =>
+                      setMostrarSenha(
+                        (value) =>
+                          !value,
+                      )
+                    }
                     disabled={loading}
                     activeOpacity={0.7}
                   >
@@ -373,11 +621,14 @@ export default function Register() {
                       style={[
                         styles.showPasswordText,
                         {
-                          color: colors.subtitle,
+                          color:
+                            colors.subtitle,
                         },
                       ]}
                     >
-                      {mostrarSenha ? "Ocultar" : "Mostrar"}
+                      {mostrarSenha
+                        ? "Ocultar"
+                        : "Mostrar"}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -388,7 +639,8 @@ export default function Register() {
                   style={[
                     styles.label,
                     {
-                      color: colors.label,
+                      color:
+                        colors.label,
                     },
                   ]}
                 >
@@ -399,8 +651,10 @@ export default function Register() {
                   style={[
                     styles.inputWrapper,
                     {
-                      backgroundColor: colors.inputBackground,
-                      borderColor: colors.inputBorder,
+                      backgroundColor:
+                        colors.inputBackground,
+                      borderColor:
+                        colors.inputBorder,
                     },
                   ]}
                 >
@@ -408,37 +662,58 @@ export default function Register() {
                     style={[
                       styles.inputIcon,
                       {
-                        backgroundColor: colors.iconBackground,
+                        backgroundColor:
+                          colors.iconBackground,
                       },
                     ]}
                   >
-                    <Text style={styles.inputIconText}>✓</Text>
+                    <Text
+                      style={
+                        styles.inputIconText
+                      }
+                    >
+                      ✓
+                    </Text>
                   </View>
 
                   <TextInput
                     placeholder="Digite a senha novamente"
-                    placeholderTextColor={colors.placeholder}
+                    placeholderTextColor={
+                      colors.placeholder
+                    }
                     style={[
                       styles.input,
                       {
-                        color: colors.inputText,
+                        color:
+                          colors.inputText,
                       },
                     ]}
-                    secureTextEntry={!mostrarConfirmar}
+                    secureTextEntry={
+                      !mostrarConfirmar
+                    }
                     value={confirmar}
-                    onChangeText={setConfirmar}
+                    onChangeText={
+                      setConfirmar
+                    }
                     autoCapitalize="none"
                     autoCorrect={false}
                     autoComplete="new-password"
                     editable={!loading}
                     returnKeyType="done"
-                    onSubmitEditing={handleRegister}
+                    onSubmitEditing={
+                      handleRegister
+                    }
                   />
 
                   <TouchableOpacity
-                    style={styles.showPassword}
+                    style={
+                      styles.showPassword
+                    }
                     onPress={() =>
-                      setMostrarConfirmar((value) => !value)
+                      setMostrarConfirmar(
+                        (value) =>
+                          !value,
+                      )
                     }
                     disabled={loading}
                     activeOpacity={0.7}
@@ -447,11 +722,14 @@ export default function Register() {
                       style={[
                         styles.showPasswordText,
                         {
-                          color: colors.subtitle,
+                          color:
+                            colors.subtitle,
                         },
                       ]}
                     >
-                      {mostrarConfirmar ? "Ocultar" : "Mostrar"}
+                      {mostrarConfirmar
+                        ? "Ocultar"
+                        : "Mostrar"}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -460,19 +738,56 @@ export default function Register() {
               <TouchableOpacity
                 style={[
                   styles.button,
-                  loading && styles.buttonDisabled,
+                  loading &&
+                  styles.buttonDisabled,
                 ]}
                 onPress={handleRegister}
                 activeOpacity={0.88}
                 disabled={loading}
               >
-                <Text style={styles.buttonText}>
-                  Criar minha conta
-                </Text>
+                {loading ? (
+                  <>
+                    <ActivityIndicator
+                      size="small"
+                      color="#FFFFFF"
+                    />
 
-                <View style={styles.buttonArrow}>
-                  <Text style={styles.buttonArrowText}>→</Text>
-                </View>
+                    <Text
+                      style={[
+                        styles.buttonText,
+                        {
+                          marginLeft: 10,
+                        },
+                      ]}
+                    >
+                      A criar conta...
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text
+                      style={
+                        styles.buttonText
+                      }
+                    >
+                      Criar minha conta
+                    </Text>
+
+                    <View
+                      style={
+                        styles.buttonArrow
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.buttonArrowText
+                        }
+                      >
+                        →
+                      </Text>
+                    </View>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
 
@@ -480,17 +795,21 @@ export default function Register() {
               style={[
                 styles.divider,
                 {
-                  backgroundColor: colors.cardBorder,
+                  backgroundColor:
+                    colors.cardBorder,
                 },
               ]}
             />
 
-            <View style={styles.footer}>
+            <View
+              style={styles.footer}
+            >
               <Text
                 style={[
                   styles.footerText,
                   {
-                    color: colors.subtitle,
+                    color:
+                      colors.subtitle,
                   },
                 ]}
               >
@@ -498,7 +817,11 @@ export default function Register() {
               </Text>
 
               <TouchableOpacity
-                onPress={() => router.replace("/login")}
+                onPress={() =>
+                  router.replace(
+                    "/login",
+                  )
+                }
                 activeOpacity={0.7}
                 disabled={loading}
               >
@@ -506,7 +829,8 @@ export default function Register() {
                   style={[
                     styles.link,
                     {
-                      color: colors.link,
+                      color:
+                        colors.link,
                     },
                   ]}
                 >
@@ -516,12 +840,15 @@ export default function Register() {
             </View>
           </View>
 
-          <View style={styles.bottomMessage}>
+          <View
+            style={styles.bottomMessage}
+          >
             <View
               style={[
                 styles.bottomDot,
                 {
-                  backgroundColor: "#405DE6",
+                  backgroundColor:
+                    "#405DE6",
                 },
               ]}
             />
@@ -530,72 +857,186 @@ export default function Register() {
               style={[
                 styles.bottomText,
                 {
-                  color: colors.subtitle,
+                  color:
+                    colors.subtitle,
                 },
               ]}
             >
-              Cria o teu espaço de leitura
+              Cria o teu espaço de
+              leitura
             </Text>
           </View>
         </Animated.View>
       </ScrollView>
 
-      {loading && (
-        <Modal
-          transparent
-          visible={loading}
-          animationType="fade"
-          statusBarTranslucent
+      <Modal
+        transparent
+        visible={loading}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => { }}
+      >
+        <View
+          style={[
+            styles.loadingOverlay,
+            {
+              backgroundColor:
+                colors.loadingBackground,
+            },
+          ]}
         >
           <View
             style={[
-              styles.loadingOverlay,
+              styles.loadingCard,
               {
-                backgroundColor: colors.loadingBackground,
+                backgroundColor:
+                  colors.card,
+                borderColor:
+                  colors.cardBorder,
+              },
+            ]}
+          >
+            <View
+              style={styles.loadingIcon}
+            >
+              <ActivityIndicator
+                size="large"
+                color="#405DE6"
+              />
+            </View>
+
+            <Text
+              style={[
+                styles.loadingText,
+                {
+                  color:
+                    colors.title,
+                },
+              ]}
+            >
+              A criar a conta...
+            </Text>
+
+            <Text
+              style={[
+                styles.loadingSubtext,
+                {
+                  color:
+                    colors.subtitle,
+                },
+              ]}
+            >
+              A preparar o teu espaço
+              no BookNook
+            </Text>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        visible={feedback.visible}
+        animationType="fade"
+        onRequestClose={closeFeedback}
+      >
+        <View
+          style={[
+            styles.feedbackOverlay,
+            {
+              backgroundColor:
+                colors.loadingBackground,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.feedbackCard,
+              {
+                backgroundColor:
+                  colors.card,
+                borderColor:
+                  colors.cardBorder,
               },
             ]}
           >
             <View
               style={[
-                styles.loadingCard,
+                styles.feedbackIcon,
                 {
-                  backgroundColor: colors.card,
-                  borderColor: colors.cardBorder,
+                  backgroundColor:
+                    isSuccess
+                      ? colors.successBackground
+                      : colors.errorBackground,
                 },
               ]}
             >
-              <View style={styles.loadingIcon}>
-                <ActivityIndicator
-                  size="large"
-                  color="#405DE6"
-                />
-              </View>
-
               <Text
                 style={[
-                  styles.loadingText,
+                  styles.feedbackIconText,
                   {
-                    color: colors.title,
+                    color:
+                      isSuccess
+                        ? colors.success
+                        : colors.error,
                   },
                 ]}
               >
-                A criar a conta...
-              </Text>
-
-              <Text
-                style={[
-                  styles.loadingSubtext,
-                  {
-                    color: colors.subtitle,
-                  },
-                ]}
-              >
-                A preparar o teu espaço no BookNook
+                {isSuccess ? "✓" : "!"}
               </Text>
             </View>
+
+            <Text
+              style={[
+                styles.feedbackTitle,
+                {
+                  color:
+                    colors.title,
+                },
+              ]}
+            >
+              {feedback.title}
+            </Text>
+
+            <Text
+              style={[
+                styles.feedbackMessage,
+                {
+                  color:
+                    colors.subtitle,
+                },
+              ]}
+            >
+              {feedback.message}
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.feedbackButton,
+                {
+                  backgroundColor:
+                    isSuccess
+                      ? colors.success
+                      : "#405DE6",
+                },
+              ]}
+              onPress={
+                handleFeedbackAction
+              }
+              activeOpacity={0.88}
+            >
+              <Text
+                style={
+                  styles.feedbackButtonText
+                }
+              >
+                {isSuccess
+                  ? "Entrar agora"
+                  : "Entendi"}
+              </Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
-      )}
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -640,7 +1081,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#405DE6",
     alignItems: "center",
     justifyContent: "center",
-
     shadowColor: "#405DE6",
     shadowOffset: {
       width: 0,
@@ -697,7 +1137,6 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     borderWidth: 1,
     padding: 22,
-
     shadowColor: "#000000",
     shadowOffset: {
       width: 0,
@@ -777,7 +1216,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 3,
-
     shadowColor: "#405DE6",
     shadowOffset: {
       width: 0,
@@ -805,7 +1243,8 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.16)",
+    backgroundColor:
+      "rgba(255,255,255,0.16)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -878,7 +1317,6 @@ const styles = StyleSheet.create({
     paddingVertical: 30,
     paddingHorizontal: 24,
     alignItems: "center",
-
     shadowColor: "#000000",
     shadowOffset: {
       width: 0,
@@ -893,7 +1331,8 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 18,
-    backgroundColor: "rgba(64, 93, 230, 0.10)",
+    backgroundColor:
+      "rgba(64, 93, 230, 0.10)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -909,5 +1348,73 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
     lineHeight: 19,
+  },
+
+  feedbackOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+
+  feedbackCard: {
+    width: "88%",
+    maxWidth: 390,
+    borderRadius: 26,
+    borderWidth: 1,
+    paddingHorizontal: 25,
+    paddingVertical: 28,
+    alignItems: "center",
+    shadowColor: "#000000",
+    shadowOffset: {
+      width: 0,
+      height: 12,
+    },
+    shadowOpacity: 0.18,
+    shadowRadius: 28,
+    elevation: 12,
+  },
+
+  feedbackIcon: {
+    width: 70,
+    height: 70,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 18,
+  },
+
+  feedbackIconText: {
+    fontSize: 34,
+    fontWeight: "900",
+  },
+
+  feedbackTitle: {
+    fontSize: 21,
+    fontWeight: "900",
+    textAlign: "center",
+    marginBottom: 9,
+  },
+
+  feedbackMessage: {
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+    maxWidth: 330,
+  },
+
+  feedbackButton: {
+    width: "100%",
+    minHeight: 52,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 23,
+  },
+
+  feedbackButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "900",
   },
 });
