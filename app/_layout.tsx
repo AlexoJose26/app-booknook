@@ -11,9 +11,6 @@ import { LivrosProvider } from "@/contexts/LivrosContext";
 import { ThemeProviderCustom, useThemeCustom } from "@/contexts/ThemeContext";
 import { UsuarioProvider } from "@/contexts/UsuarioContext";
 
-// Inicializa o banco SQLite antes dos contextos que dependem dele.
-import "@/database/db";
-
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
@@ -95,10 +92,7 @@ function ThemeWrapper() {
         </Stack>
       </View>
 
-      <StatusBar
-        style={isDark ? "light" : "dark"}
-        backgroundColor={safeAreaColor}
-      />
+      <StatusBar style={isDark ? "light" : "dark"} />
     </SafeAreaView>
   );
 }

@@ -1,6 +1,8 @@
 import * as SQLite from "expo-sqlite";
 
-export function runMigrations(database: SQLite.SQLiteDatabase) {
+export async function runMigrations(
+  database: SQLite.SQLiteDatabase
+): Promise<void> {
   if (!database) {
     throw new Error(
       "Banco de dados não foi fornecido para executar as migrations."
@@ -8,9 +10,8 @@ export function runMigrations(database: SQLite.SQLiteDatabase) {
   }
 
   try {
-    database.execSync(`
+    await database.execAsync(`
       PRAGMA foreign_keys = ON;
-
 
       CREATE TABLE IF NOT EXISTS usuarios (
         id TEXT PRIMARY KEY,
@@ -34,13 +35,10 @@ export function runMigrations(database: SQLite.SQLiteDatabase) {
         livro_id TEXT NOT NULL,
         status TEXT NOT NULL,
         createdAt TEXT NOT NULL,
-
         UNIQUE (usuario_id, livro_id),
-
         FOREIGN KEY (usuario_id)
           REFERENCES usuarios(id)
           ON DELETE CASCADE,
-
         FOREIGN KEY (livro_id)
           REFERENCES livros(id)
           ON DELETE CASCADE
@@ -53,11 +51,9 @@ export function runMigrations(database: SQLite.SQLiteDatabase) {
         texto TEXT NOT NULL,
         nota INTEGER,
         createdAt TEXT NOT NULL,
-
         FOREIGN KEY (usuario_id)
           REFERENCES usuarios(id)
           ON DELETE CASCADE,
-
         FOREIGN KEY (livro_id)
           REFERENCES livros(id)
           ON DELETE CASCADE
@@ -70,15 +66,12 @@ export function runMigrations(database: SQLite.SQLiteDatabase) {
         livro_id TEXT,
         critica_id INTEGER,
         createdAt TEXT NOT NULL,
-
         FOREIGN KEY (usuario_id)
           REFERENCES usuarios(id)
           ON DELETE CASCADE,
-
         FOREIGN KEY (livro_id)
           REFERENCES livros(id)
           ON DELETE CASCADE,
-
         FOREIGN KEY (critica_id)
           REFERENCES criticas(id)
           ON DELETE CASCADE
@@ -90,34 +83,26 @@ export function runMigrations(database: SQLite.SQLiteDatabase) {
         critica_id INTEGER NOT NULL,
         texto TEXT NOT NULL,
         createdAt TEXT NOT NULL,
-
         FOREIGN KEY (usuario_id)
           REFERENCES usuarios(id)
           ON DELETE CASCADE,
-
         FOREIGN KEY (critica_id)
           REFERENCES criticas(id)
           ON DELETE CASCADE
       );
-
 
       CREATE TABLE IF NOT EXISTS curtidas (
         usuario_id TEXT NOT NULL,
         critica_id INTEGER NOT NULL,
         createdAt TEXT NOT NULL,
-
         PRIMARY KEY (usuario_id, critica_id),
-
         FOREIGN KEY (usuario_id)
           REFERENCES usuarios(id)
           ON DELETE CASCADE,
-
         FOREIGN KEY (critica_id)
           REFERENCES criticas(id)
           ON DELETE CASCADE
       );
-
-
 
       CREATE INDEX IF NOT EXISTS idx_estantes_usuario
         ON estantes(usuario_id);
