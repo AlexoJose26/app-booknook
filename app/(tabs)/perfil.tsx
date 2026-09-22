@@ -7,8 +7,6 @@ import {
   useState,
 } from "react";
 
-
-
 import {
   ActivityIndicator,
   Alert,
@@ -37,9 +35,7 @@ import { eq, inArray } from "drizzle-orm";
 
 import * as ImagePicker from "expo-image-picker";
 
-import {
-  MaterialCommunityIcons,
-} from "@expo/vector-icons";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import {
   useFocusEffect,
@@ -63,8 +59,6 @@ import {
   toggleCurtida,
   type Comentario,
 } from "@/database/services/socialService";
-
-
 
 type Usuario = {
   id: string;
@@ -101,8 +95,6 @@ type EstatisticaPublicacao = {
   comentarios: number;
   curtiu: boolean;
 };
-
-
 
 function normalizarTexto(valor: unknown): string {
   return String(valor ?? "")
@@ -190,7 +182,7 @@ function formatarDataPublicacao(
       month: "short",
       year:
         data.getFullYear() !==
-          agora.getFullYear()
+        agora.getFullYear()
           ? "numeric"
           : undefined,
     });
@@ -221,8 +213,9 @@ function formatarDataPublicacao(
   }
 
   if (dias < 7) {
-    return `Há ${dias} ${dias === 1 ? "dia" : "dias"
-      }`;
+    return `Há ${dias} ${
+      dias === 1 ? "dia" : "dias"
+    }`;
   }
 
   return data.toLocaleDateString("pt-PT", {
@@ -230,17 +223,19 @@ function formatarDataPublicacao(
     month: "short",
     year:
       data.getFullYear() !==
-        agora.getFullYear()
+      agora.getFullYear()
         ? "numeric"
         : undefined,
   });
 }
 
-
+/* =========================================================
+   ÍCONE DE LIVRO
+========================================================= */
 
 function LivroIcon({
   size = 42,
-  color = "#176B45",
+  color = "#1877F2",
   pageColor = "#FFFFFF",
 }: {
   size?: number;
@@ -330,6 +325,10 @@ function LivroIcon({
   );
 }
 
+/* =========================================================
+   AVATAR
+========================================================= */
+
 type AvatarProps = {
   size?: number;
   foto?: string | null;
@@ -355,22 +354,19 @@ const Avatar = memo(
 
     const tamanho = Math.max(1, size);
 
-    const containerStyle = {
-      width: tamanho,
-      height: tamanho,
-      borderRadius: tamanho / 2,
-    };
-
     const primeiraLetra =
-      nome?.trim()?.charAt(0)?.toUpperCase() || "B";
+      nome?.trim()?.charAt(0)?.toUpperCase() ||
+      "U";
 
     if (!foto || imagemComErro) {
       return (
         <View
           style={[
             styles.avatarFallback,
-            containerStyle,
             {
+              width: tamanho,
+              height: tamanho,
+              borderRadius: tamanho / 2,
               backgroundColor: primaryDeep,
             },
           ]}
@@ -392,21 +388,21 @@ const Avatar = memo(
 
     return (
       <View
-        style={[
-          styles.avatarImageContainer,
-          containerStyle,
-        ]}
+        style={{
+          width: tamanho,
+          height: tamanho,
+          borderRadius: tamanho / 2,
+          overflow: "hidden",
+          backgroundColor: "#E7F3FF",
+        }}
       >
         <Image
           source={{ uri: foto }}
-          style={[
-            styles.avatarImage,
-            {
-              width: tamanho,
-              height: tamanho,
-              borderRadius: tamanho / 2,
-            },
-          ]}
+          style={{
+            width: tamanho,
+            height: tamanho,
+            borderRadius: tamanho / 2,
+          }}
           resizeMode="cover"
           fadeDuration={0}
           onError={() => {
@@ -420,28 +416,77 @@ const Avatar = memo(
 
 Avatar.displayName = "Avatar";
 
+/* =========================================================
+   PERFIL
+========================================================= */
 
 export default function Perfil() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
+  /*
+   * PALETA AZUL MODERNA
+   */
+
   const colors = useMemo(
     () => ({
-      background: isDark ? "#07150E" : "#F3F8F5",
-      card: isDark ? "#102019" : "#FFFFFF",
-      cardSecondary: isDark ? "#14281F" : "#F7FBF8",
-      text: isDark ? "#F1F7F3" : "#163325",
-      secondary: isDark ? "#A6B8AE" : "#6B7D72",
-      primary: isDark ? "#4FAF7A" : "#176B45",
-      primaryDark: isDark ? "#2C8C5C" : "#0F5939",
-      primaryDeep: "#0D4D31",
-      border: isDark ? "#244033" : "#DCE9E1",
-      soft: isDark ? "#162A20" : "#EDF6F0",
-      muted: isDark ? "#1A3024" : "#E7F1EA",
-      input: isDark ? "#0D1C15" : "#F8FBF9",
-      danger: isDark ? "#EF6B6B" : "#D94B4B",
-      dangerSoft: isDark ? "#331B1F" : "#FDECEC",
+      background: isDark
+        ? "#0B1220"
+        : "#F0F2F5",
+
+      card: isDark
+        ? "#111827"
+        : "#FFFFFF",
+
+      cardSecondary: isDark
+        ? "#172033"
+        : "#F7F8FA",
+
+      text: isDark
+        ? "#F9FAFB"
+        : "#1C1E21",
+
+      secondary: isDark
+        ? "#A8B3C7"
+        : "#65676B",
+
+      primary: isDark
+        ? "#4599FF"
+        : "#1877F2",
+
+      primaryDark: isDark
+        ? "#2D7FE3"
+        : "#166FE5",
+
+      primaryDeep: isDark
+        ? "#1D4ED8"
+        : "#145DBF",
+
+      border: isDark
+        ? "#273449"
+        : "#DADDE1",
+
+      soft: isDark
+        ? "#172554"
+        : "#E7F3FF",
+
+      muted: isDark
+        ? "#1E293B"
+        : "#E4E6EB",
+
+      input: isDark
+        ? "#0F172A"
+        : "#F0F2F5",
+
+      danger: isDark
+        ? "#FF6B6B"
+        : "#E41E3F",
+
+      dangerSoft: isDark
+        ? "#351923"
+        : "#FDE7EC",
+
       white: "#FFFFFF",
     }),
     [isDark],
@@ -546,11 +591,9 @@ export default function Perfil() {
     };
   }, []);
 
-  /*
-   * =========================================================
-   * ESTATÍSTICAS DAS PUBLICAÇÕES
-   * =========================================================
-   */
+  /* =========================================================
+     ESTATÍSTICAS
+  ========================================================= */
 
   const carregarEstatisticasPublicacoes =
     useCallback(
@@ -562,15 +605,22 @@ export default function Perfil() {
           publicacoes.filter(
             (publicacao) =>
               publicacao.criticaId !== null &&
-              publicacao.criticaId !== undefined &&
+              publicacao.criticaId !==
+                undefined &&
               Number.isFinite(
-                Number(publicacao.criticaId),
+                Number(
+                  publicacao.criticaId,
+                ),
               ),
           );
 
-        if (criticasValidas.length === 0) {
+        if (
+          criticasValidas.length === 0
+        ) {
           if (mountedRef.current) {
-            setEstatisticasPublicacoes({});
+            setEstatisticasPublicacoes(
+              {},
+            );
           }
 
           return;
@@ -637,14 +687,15 @@ export default function Perfil() {
 
                 if (
                   criticaId === null ||
-                  criticaId === undefined
+                  criticaId ===
+                    undefined
                 ) {
                   return publicacao;
                 }
 
                 const estatistica =
                   mapa[
-                  String(criticaId)
+                    String(criticaId)
                   ];
 
                 if (!estatistica) {
@@ -667,11 +718,9 @@ export default function Perfil() {
       [],
     );
 
-  /*
-   * =========================================================
-   * CARREGAR PERFIL
-   * =========================================================
-   */
+  /* =========================================================
+     CARREGAR PERFIL
+  ========================================================= */
 
   const carregarPerfil =
     useCallback(
@@ -688,8 +737,8 @@ export default function Perfil() {
         if (
           !forcar &&
           agora -
-          ultimoCarregamentoRef.current <
-          2500
+              ultimoCarregamentoRef.current <
+            2500
         ) {
           return;
         }
@@ -714,7 +763,9 @@ export default function Perfil() {
           if (!sessao) {
             if (mountedRef.current) {
               setUsuario(null);
-              setPublicacoesUsuario([]);
+              setPublicacoesUsuario(
+                [],
+              );
               setLivrosLidos([]);
             }
 
@@ -742,7 +793,8 @@ export default function Perfil() {
           if (
             usuarioId === undefined ||
             usuarioId === null ||
-            String(usuarioId).trim() === ""
+            String(usuarioId).trim() ===
+              ""
           ) {
             await AsyncStorage.removeItem(
               "usuarioLogado",
@@ -751,6 +803,11 @@ export default function Perfil() {
             router.replace("/login");
             return;
           }
+
+          /*
+           * BUSCA A VERSÃO ATUAL DO UTILIZADOR
+           * DIRETAMENTE NO SQLITE
+           */
 
           const usuarioBanco =
             await db
@@ -786,8 +843,8 @@ export default function Perfil() {
           const nomeBanco =
             String(
               usuarioBancoAtual.nome ??
-              usuarioLogado.nome ??
-              "Utilizador",
+                usuarioLogado.nome ??
+                "Utilizador",
             ).trim() ||
             "Utilizador";
 
@@ -796,33 +853,29 @@ export default function Perfil() {
             usuarioLogado.foto_perfil ??
             null;
 
-          const usuarioAtual: Usuario = {
-            id: String(
-              usuarioBancoAtual.id,
-            ),
-            nome: nomeBanco,
-            foto_perfil: fotoBanco
-              ? String(fotoBanco)
-              : null,
-          };
-
-          /*
-           * Atualizamos apenas quando os valores realmente
-           * mudaram. Isso reduz renders desnecessários do Avatar.
-           */
+          const usuarioAtual: Usuario =
+            {
+              id: String(
+                usuarioBancoAtual.id,
+              ),
+              nome: nomeBanco,
+              foto_perfil: fotoBanco
+                ? String(fotoBanco)
+                : null,
+            };
 
           if (mountedRef.current) {
             setUsuario(
-              (usuarioAnterior) => {
+              (anterior) => {
                 if (
-                  usuarioAnterior?.id ===
-                  usuarioAtual.id &&
-                  usuarioAnterior.nome ===
-                  usuarioAtual.nome &&
-                  usuarioAnterior.foto_perfil ===
-                  usuarioAtual.foto_perfil
+                  anterior?.id ===
+                    usuarioAtual.id &&
+                  anterior.nome ===
+                    usuarioAtual.nome &&
+                  anterior.foto_perfil ===
+                    usuarioAtual.foto_perfil
                 ) {
-                  return usuarioAnterior;
+                  return anterior;
                 }
 
                 return usuarioAtual;
@@ -830,22 +883,21 @@ export default function Perfil() {
             );
 
             setNovoNome(
-              (nomeAnterior) =>
-                nomeAnterior ===
-                  nomeBanco
-                  ? nomeAnterior
+              (anterior) =>
+                anterior === nomeBanco
+                  ? anterior
                   : nomeBanco,
             );
 
             setFotoLocal(
-              (fotoAnterior) => {
+              (anterior) => {
                 const novaFoto =
                   usuarioAtual.foto_perfil ??
                   null;
 
-                return fotoAnterior ===
+                return anterior ===
                   novaFoto
-                  ? fotoAnterior
+                  ? anterior
                   : novaFoto;
               },
             );
@@ -865,11 +917,9 @@ export default function Perfil() {
             }),
           );
 
-          /*
-           * =================================================
-           * PUBLICAÇÕES
-           * =================================================
-           */
+          /* =================================================
+             PUBLICAÇÕES
+          ================================================= */
 
           try {
             const registrosFeed =
@@ -979,10 +1029,10 @@ export default function Perfil() {
                     const critica =
                       item.critica_id
                         ? criticasMap.get(
-                          String(
-                            item.critica_id,
-                          ),
-                        )
+                            String(
+                              item.critica_id,
+                            ),
+                          )
                         : null;
 
                     const livroId =
@@ -993,10 +1043,10 @@ export default function Perfil() {
                     const livro =
                       livroId
                         ? livrosMap.get(
-                          String(
-                            livroId,
-                          ),
-                        )
+                            String(
+                              livroId,
+                            ),
+                          )
                         : null;
 
                     const tipo =
@@ -1038,8 +1088,8 @@ export default function Perfil() {
                         item.createdAt,
                       livroId: livroId
                         ? String(
-                          livroId,
-                        )
+                            livroId,
+                          )
                         : null,
                       criticaId:
                         item.critica_id,
@@ -1102,18 +1152,19 @@ export default function Perfil() {
             );
 
             if (mountedRef.current) {
-              setPublicacoesUsuario([]);
+              setPublicacoesUsuario(
+                [],
+              );
+
               setEstatisticasPublicacoes(
                 {},
               );
             }
           }
 
-          /*
-           * =================================================
-           * LIVROS LIDOS
-           * =================================================
-           */
+          /* =================================================
+             LIVROS LIDOS
+          ================================================= */
 
           try {
             const registrosEstantes =
@@ -1146,7 +1197,8 @@ export default function Perfil() {
               );
 
             if (
-              idsLivrosLidos.length === 0
+              idsLivrosLidos.length ===
+              0
             ) {
               if (mountedRef.current) {
                 setLivrosLidos([]);
@@ -1258,11 +1310,9 @@ export default function Perfil() {
       ],
     );
 
-  /*
-   * =========================================================
-   * FOCO DA PÁGINA
-   * =========================================================
-   */
+  /* =========================================================
+     FOCO
+  ========================================================= */
 
   useFocusEffect(
     useCallback(() => {
@@ -1278,11 +1328,9 @@ export default function Perfil() {
     ]),
   );
 
-  /*
-   * =========================================================
-   * SINCRONIZAÇÃO AUTOMÁTICA
-   * =========================================================
-   */
+  /* =========================================================
+     SINCRONIZAÇÃO
+  ========================================================= */
 
   useEffect(() => {
     const intervalo =
@@ -1329,11 +1377,9 @@ export default function Perfil() {
     };
   }, [carregarPerfil]);
 
-  /*
-   * =========================================================
-   * ATUALIZAR
-   * =========================================================
-   */
+  /* =========================================================
+     ATUALIZAR
+  ========================================================= */
 
   const atualizarPerfil =
     useCallback(async () => {
@@ -1349,11 +1395,9 @@ export default function Perfil() {
       );
     }, [carregarPerfil]);
 
-  /*
-   * =========================================================
-   * CURTIR / DESCURTIR
-   * =========================================================
-   */
+  /* =========================================================
+     CURTIDA
+  ========================================================= */
 
   const alternarCurtida =
     useCallback(
@@ -1423,9 +1467,9 @@ export default function Perfil() {
                 Math.max(
                   0,
                   anterior.curtidas +
-                  (novaCurtida
-                    ? 1
-                    : -1),
+                    (novaCurtida
+                      ? 1
+                      : -1),
                 );
 
               return {
@@ -1462,9 +1506,9 @@ export default function Perfil() {
                       Math.max(
                         0,
                         quantidadeAtual +
-                        (novaCurtida
-                          ? 1
-                          : -1),
+                          (novaCurtida
+                            ? 1
+                            : -1),
                       ),
                     curtiu:
                       novaCurtida,
@@ -1490,11 +1534,9 @@ export default function Perfil() {
       [usuario?.id],
     );
 
-  /*
-   * =========================================================
-   * ABRIR COMENTÁRIOS
-   * =========================================================
-   */
+  /* =========================================================
+     COMENTÁRIOS
+  ========================================================= */
 
   const abrirComentarios =
     useCallback(
@@ -1562,12 +1604,6 @@ export default function Perfil() {
       [],
     );
 
-  /*
-   * =========================================================
-   * FECHAR COMENTÁRIOS
-   * =========================================================
-   */
-
   const fecharComentarios =
     useCallback(() => {
       if (enviandoComentario) {
@@ -1586,12 +1622,6 @@ export default function Perfil() {
 
       setComentarioTexto("");
     }, [enviandoComentario]);
-
-  /*
-   * =========================================================
-   * ENVIAR COMENTÁRIO
-   * =========================================================
-   */
 
   const enviarComentario =
     useCallback(async () => {
@@ -1711,11 +1741,9 @@ export default function Perfil() {
       publicacaoSelecionada,
     ]);
 
-  /*
-   * =========================================================
-   * ABRIR EDIÇÃO
-   * =========================================================
-   */
+  /* =========================================================
+     EDITAR PERFIL
+  ========================================================= */
 
   const abrirEdicao =
     useCallback(() => {
@@ -1726,8 +1754,7 @@ export default function Perfil() {
       setNovoNome(usuario.nome);
 
       setFotoLocal(
-        usuario.foto_perfil ??
-        null,
+        usuario.foto_perfil ?? null,
       );
 
       setMenuVisible(false);
@@ -1739,11 +1766,9 @@ export default function Perfil() {
       });
     }, [usuario, salvando]);
 
-  /*
-   * =========================================================
-   * SELECIONAR FOTO
-   * =========================================================
-   */
+  /* =========================================================
+     FOTO
+  ========================================================= */
 
   const selecionarFoto =
     useCallback(async () => {
@@ -1755,9 +1780,7 @@ export default function Perfil() {
       }
 
       try {
-        setSelecionandoFoto(
-          true,
-        );
+        setSelecionandoFoto(true);
 
         const permissao =
           await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1802,20 +1825,16 @@ export default function Perfil() {
           "Não foi possível selecionar a foto.",
         );
       } finally {
-        setSelecionandoFoto(
-          false,
-        );
+        setSelecionandoFoto(false);
       }
     }, [
       salvando,
       selecionandoFoto,
     ]);
 
-  /*
-   * =========================================================
-   * SALVAR PERFIL
-   * =========================================================
-   */
+  /* =========================================================
+     SALVAR PERFIL
+  ========================================================= */
 
   const salvarPerfil =
     useCallback(async () => {
@@ -1865,7 +1884,8 @@ export default function Perfil() {
             .limit(1);
 
         if (
-          usuarioConfirmado.length === 0
+          usuarioConfirmado.length ===
+          0
         ) {
           throw new Error(
             "Não foi possível confirmar os dados atualizados.",
@@ -1876,16 +1896,16 @@ export default function Perfil() {
           usuarioConfirmado[0];
 
         const usuarioAtualizado: Usuario =
-        {
-          id: String(
-            dadosConfirmados.id,
-          ),
-          nome:
-            dadosConfirmados.nome,
-          foto_perfil:
-            dadosConfirmados.foto_perfil ??
-            null,
-        };
+          {
+            id: String(
+              dadosConfirmados.id,
+            ),
+            nome:
+              dadosConfirmados.nome,
+            foto_perfil:
+              dadosConfirmados.foto_perfil ??
+              null,
+          };
 
         if (mountedRef.current) {
           setUsuario(
@@ -1898,7 +1918,7 @@ export default function Perfil() {
 
           setFotoLocal(
             usuarioAtualizado.foto_perfil ??
-            null,
+              null,
           );
         }
 
@@ -1907,15 +1927,14 @@ export default function Perfil() {
             "usuarioLogado",
           );
 
-        let sessaoAnterior: any =
-          {};
+        let sessaoAnterior: any = {};
 
         try {
           sessaoAnterior =
             sessaoAtual
               ? JSON.parse(
-                sessaoAtual,
-              )
+                  sessaoAtual,
+                )
               : {};
         } catch {
           sessaoAnterior = {};
@@ -1946,13 +1965,6 @@ export default function Perfil() {
           "Perfil atualizado",
           "Os seus dados foram guardados e sincronizados com a sua conta.",
         );
-
-        /*
-         * Não fazemos um novo carregarPerfil() imediatamente
-         * porque o estado já foi atualizado acima.
-         * Isso evita um novo ciclo de renderização e possíveis
-         * oscilações da imagem do Avatar.
-         */
       } catch (erro) {
         console.error(
           "Erro ao salvar perfil:",
@@ -1975,11 +1987,9 @@ export default function Perfil() {
       fotoLocal,
     ]);
 
-  /*
-   * =========================================================
-   * TERMINAR SESSÃO
-   * =========================================================
-   */
+  /* =========================================================
+     LOGOUT
+  ========================================================= */
 
   const terminarSessao =
     useCallback(() => {
@@ -2000,10 +2010,7 @@ export default function Perfil() {
                   "usuarioLogado",
                 );
 
-                setMenuVisible(
-                  false,
-                );
-
+                setMenuVisible(false);
                 setEditModalVisible(
                   false,
                 );
@@ -2037,11 +2044,9 @@ export default function Perfil() {
       );
     }, [router]);
 
-  /*
-   * =========================================================
-   * ESTATÍSTICAS
-   * =========================================================
-   */
+  /* =========================================================
+     ESTATÍSTICAS
+  ========================================================= */
 
   const estatisticas = useMemo(
     () => [
@@ -2062,76 +2067,14 @@ export default function Perfil() {
     ],
   );
 
-  /*
-   * =========================================================
-   * VAZIO
-   * =========================================================
-   */
+  /* =========================================================
+     VAZIO
+  ========================================================= */
 
   const renderVazio =
     useCallback(() => {
-      if (
-        aba === "publicacoes"
-      ) {
-        return (
-          <View
-            style={[
-              styles.emptyCard,
-              {
-                backgroundColor:
-                  colors.card,
-                borderColor:
-                  colors.border,
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.emptyIcon,
-                {
-                  backgroundColor:
-                    colors.soft,
-                },
-              ]}
-            >
-              <LivroIcon
-                size={42}
-                color={colors.primary}
-                pageColor={
-                  colors.card
-                }
-              />
-            </View>
-
-            <Text
-              style={[
-                styles.emptyTitle,
-                {
-                  color:
-                    colors.text,
-                },
-              ]}
-            >
-              Ainda não há publicações
-            </Text>
-
-            <Text
-              style={[
-                styles.emptyText,
-                {
-                  color:
-                    colors.secondary,
-                },
-              ]}
-            >
-              As suas publicações
-              aparecerão aqui quando
-              começar a partilhar com
-              a comunidade.
-            </Text>
-          </View>
-        );
-      }
+      const publicacoes =
+        aba === "publicacoes";
 
       return (
         <View
@@ -2154,25 +2097,34 @@ export default function Perfil() {
               },
             ]}
           >
-            <LivroIcon
-              size={42}
-              color={colors.primary}
-              pageColor={
-                colors.card
-              }
-            />
+            {publicacoes ? (
+              <MaterialCommunityIcons
+                name="post-outline"
+                size={40}
+                color={colors.primary}
+              />
+            ) : (
+              <LivroIcon
+                size={42}
+                color={colors.primary}
+                pageColor={
+                  colors.card
+                }
+              />
+            )}
           </View>
 
           <Text
             style={[
               styles.emptyTitle,
               {
-                color:
-                  colors.text,
+                color: colors.text,
               },
             ]}
           >
-            Nenhum livro lido
+            {publicacoes
+              ? "Ainda não há publicações"
+              : "Nenhum livro lido"}
           </Text>
 
           <Text
@@ -2184,19 +2136,17 @@ export default function Perfil() {
               },
             ]}
           >
-            Os livros que marcar como
-            lidos aparecerão nesta
-            seção.
+            {publicacoes
+              ? "As suas publicações aparecerão aqui quando começar a partilhar com a comunidade."
+              : "Os livros que marcar como lidos aparecerão nesta seção."}
           </Text>
         </View>
       );
     }, [aba, colors]);
 
-  /*
-   * =========================================================
-   * PUBLICAÇÃO — ESTILO REDE SOCIAL
-   * =========================================================
-   */
+  /* =========================================================
+     PUBLICAÇÃO
+  ========================================================= */
 
   const renderPublicacao =
     useCallback(
@@ -2228,8 +2178,8 @@ export default function Perfil() {
         const estatistica =
           possuiInteracao
             ? estatisticasPublicacoes[
-            String(criticaId)
-            ]
+                String(criticaId)
+              ]
             : undefined;
 
         const quantidadeCurtidas =
@@ -2282,7 +2232,7 @@ export default function Perfil() {
                 backgroundColor:
                   colors.card,
                 borderBottomColor:
-                  colors.border,
+                  colors.background,
               },
             ]}
           >
@@ -2293,31 +2243,18 @@ export default function Perfil() {
                 styles.publicacaoHeader
               }
             >
-              <View
-                style={[
-                  styles.miniAvatarWrapper,
-                  {
-                    borderColor:
-                      colors.primary,
-                  },
-                ]}
-              >
-                <Avatar
-                  size={42}
-                  foto={
-                    fotoLocal ??
-                    usuario?.foto_perfil ??
-                    null
-                  }
-                  nome={usuario?.nome}
-                  primaryDeep={
-                    colors.primaryDeep
-                  }
-                  white={
-                    colors.white
-                  }
-                />
-              </View>
+              <Avatar
+                size={46}
+                foto={
+                  usuario?.foto_perfil ??
+                  null
+                }
+                nome={usuario?.nome}
+                primaryDeep={
+                  colors.primaryDeep
+                }
+                white={colors.white}
+              />
 
               <View
                 style={
@@ -2426,7 +2363,7 @@ export default function Perfil() {
               </Text>
             )}
 
-            {/* LIVRO ASSOCIADO */}
+            {/* LIVRO */}
 
             {(!!titulo || !!autor) && (
               <View
@@ -2445,15 +2382,15 @@ export default function Perfil() {
                     styles.livroPublicacaoIcon,
                     {
                       backgroundColor:
-                        colors.primaryDeep,
+                        colors.primary,
                     },
                   ]}
                 >
                   <LivroIcon
-                    size={32}
+                    size={31}
                     color="#FFFFFF"
                     pageColor={
-                      colors.primaryDeep
+                      colors.primary
                     }
                   />
                 </View>
@@ -2516,7 +2453,7 @@ export default function Perfil() {
             {possuiInteracao &&
               (quantidadeCurtidas > 0 ||
                 quantidadeComentarios >
-                0) && (
+                  0) && (
                 <View
                   style={[
                     styles.postStats,
@@ -2533,22 +2470,22 @@ export default function Perfil() {
                   >
                     {quantidadeCurtidas >
                       0 && (
-                        <View
-                          style={[
-                            styles.likeCircle,
-                            {
-                              backgroundColor:
-                                colors.primary,
-                            },
-                          ]}
-                        >
-                          <MaterialCommunityIcons
-                            name="heart"
-                            size={10}
-                            color="#FFFFFF"
-                          />
-                        </View>
-                      )}
+                      <View
+                        style={[
+                          styles.likeCircle,
+                          {
+                            backgroundColor:
+                              colors.primary,
+                          },
+                        ]}
+                      >
+                        <MaterialCommunityIcons
+                          name="heart"
+                          size={10}
+                          color="#FFFFFF"
+                        />
+                      </View>
+                    )}
 
                     <Text
                       style={[
@@ -2560,47 +2497,46 @@ export default function Perfil() {
                       ]}
                     >
                       {quantidadeCurtidas >
-                        0
-                        ? `${quantidadeCurtidas} ${quantidadeCurtidas ===
-                          1
-                          ? "curtida"
-                          : "curtidas"
-                        }`
+                      0
+                        ? `${quantidadeCurtidas} ${
+                            quantidadeCurtidas ===
+                            1
+                              ? "curtida"
+                              : "curtidas"
+                          }`
                         : ""}
                     </Text>
                   </View>
 
                   {quantidadeComentarios >
                     0 && (
-                      <TouchableOpacity
-                        activeOpacity={
-                          0.7
-                        }
-                        onPress={() =>
-                          abrirComentarios(
-                            item,
-                          )
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.postStatsText,
-                            {
-                              color:
-                                colors.secondary,
-                            },
-                          ]}
-                        >
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() =>
+                        void abrirComentarios(
+                          item,
+                        )
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.postStatsText,
                           {
-                            quantidadeComentarios
-                          }{" "}
-                          {quantidadeComentarios ===
-                            1
-                            ? "comentário"
-                            : "comentários"}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                            color:
+                              colors.secondary,
+                          },
+                        ]}
+                      >
+                        {
+                          quantidadeComentarios
+                        }{" "}
+                        {quantidadeComentarios ===
+                        1
+                          ? "comentário"
+                          : "comentários"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 
@@ -2695,18 +2631,15 @@ export default function Perfil() {
       [
         colors,
         usuario,
-        fotoLocal,
         estatisticasPublicacoes,
         alternarCurtida,
         abrirComentarios,
       ],
     );
 
-  /*
-   * =========================================================
-   * LIVRO
-   * =========================================================
-   */
+  /* =========================================================
+     LIVRO LIDO
+  ========================================================= */
 
   const renderLivro =
     useCallback(
@@ -2842,22 +2775,14 @@ export default function Perfil() {
       [colors],
     );
 
-  /*
-   * =========================================================
-   * DADOS ATUAIS
-   * =========================================================
-   */
-
   const dadosAtuais =
     aba === "publicacoes"
       ? publicacoesUsuario
       : livrosLidos;
 
-  /*
-   * =========================================================
-   * LOADING
-   * =========================================================
-   */
+  /* =========================================================
+     LOADING
+  ========================================================= */
 
   if (
     carregando &&
@@ -2899,7 +2824,7 @@ export default function Perfil() {
               styles.loadingIcon,
               {
                 backgroundColor:
-                  colors.primaryDeep,
+                  colors.primary,
               },
             ]}
           >
@@ -2907,7 +2832,7 @@ export default function Perfil() {
               size={48}
               color="#FFFFFF"
               pageColor={
-                colors.primaryDeep
+                colors.primary
               }
             />
           </View>
@@ -2947,6 +2872,7 @@ export default function Perfil() {
       </SafeAreaView>
     );
   }
+
   return (
     <SafeAreaView
       style={[
@@ -3021,8 +2947,6 @@ export default function Perfil() {
               {
                 backgroundColor:
                   colors.card,
-                borderColor:
-                  colors.border,
               },
             ]}
             onPress={() =>
@@ -3030,40 +2954,18 @@ export default function Perfil() {
             }
             activeOpacity={0.8}
           >
-            <View
-              style={[
-                styles.menuDot,
-                {
-                  backgroundColor:
-                    colors.text,
-                },
-              ]}
-            />
-
-            <View
-              style={[
-                styles.menuDot,
-                {
-                  backgroundColor:
-                    colors.text,
-                },
-              ]}
-            />
-
-            <View
-              style={[
-                styles.menuDot,
-                {
-                  backgroundColor:
-                    colors.text,
-                },
-              ]}
+            <MaterialCommunityIcons
+              name="dots-horizontal"
+              size={24}
+              color={colors.text}
             />
           </TouchableOpacity>
         </View>
 
         <FlatList
-          data={dadosAtuais as any[]}
+          data={
+            dadosAtuais as any[]
+          }
           keyExtractor={(
             item,
             index,
@@ -3103,7 +3005,9 @@ export default function Perfil() {
           }
           ListHeaderComponent={
             <View>
-              {/* PERFIL */}
+              {/* =================================================
+                  PERFIL
+              ================================================= */}
 
               <View
                 style={[
@@ -3127,11 +3031,26 @@ export default function Perfil() {
                       {
                         borderColor:
                           colors.primary,
+                        backgroundColor:
+                          colors.card,
                       },
                     ]}
                   >
                     <Avatar
-                      size={94}
+                      size={100}
+                      foto={
+                        usuario?.foto_perfil ??
+                        null
+                      }
+                      nome={
+                        usuario?.nome
+                      }
+                      primaryDeep={
+                        colors.primaryDeep
+                      }
+                      white={
+                        colors.white
+                      }
                     />
 
                     <View
@@ -3212,6 +3131,8 @@ export default function Perfil() {
                   </View>
                 </View>
 
+                {/* ESTATÍSTICAS */}
+
                 <View
                   style={[
                     styles.statsContainer,
@@ -3233,12 +3154,12 @@ export default function Perfil() {
                         style={[
                           styles.statItem,
                           index !==
-                          estatisticas.length -
-                          1 && {
-                            borderRightWidth: 1,
-                            borderRightColor:
-                              colors.border,
-                          },
+                            estatisticas.length -
+                              1 && {
+                              borderRightWidth: 1,
+                              borderRightColor:
+                                colors.border,
+                            },
                         ]}
                       >
                         <Text
@@ -3274,7 +3195,9 @@ export default function Perfil() {
                 </View>
               </View>
 
-              {/* ABAS */}
+              {/* =================================================
+                  ABAS
+              ================================================= */}
 
               <View
                 style={[
@@ -3297,35 +3220,23 @@ export default function Perfil() {
                   style={[
                     styles.tab,
                     aba ===
-                    "publicacoes" && {
-                      backgroundColor:
-                        colors.soft,
+                      "publicacoes" && {
+                      borderBottomColor:
+                        colors.primary,
+                      borderBottomWidth: 3,
                     },
                   ]}
                 >
-                  <View
-                    style={[
-                      styles.tabIcon,
-                      {
-                        backgroundColor:
-                          aba ===
-                            "publicacoes"
-                            ? colors.primary
-                            : colors.muted,
-                      },
-                    ]}
-                  >
-                    <MaterialCommunityIcons
-                      name="post-outline"
-                      size={21}
-                      color={
-                        aba ===
-                          "publicacoes"
-                          ? "#FFFFFF"
-                          : colors.secondary
-                      }
-                    />
-                  </View>
+                  <MaterialCommunityIcons
+                    name="post-outline"
+                    size={21}
+                    color={
+                      aba ===
+                      "publicacoes"
+                        ? colors.primary
+                        : colors.secondary
+                    }
+                  />
 
                   <Text
                     style={[
@@ -3333,7 +3244,7 @@ export default function Perfil() {
                       {
                         color:
                           aba ===
-                            "publicacoes"
+                          "publicacoes"
                             ? colors.primary
                             : colors.secondary,
                       },
@@ -3351,39 +3262,21 @@ export default function Perfil() {
                   style={[
                     styles.tab,
                     aba === "lidos" && {
-                      backgroundColor:
-                        colors.soft,
+                      borderBottomColor:
+                        colors.primary,
+                      borderBottomWidth: 3,
                     },
                   ]}
                 >
-                  <View
-                    style={[
-                      styles.tabIcon,
-                      {
-                        backgroundColor:
-                          aba ===
-                            "lidos"
-                            ? colors.primary
-                            : colors.muted,
-                      },
-                    ]}
-                  >
-                    <LivroIcon
-                      size={26}
-                      color={
-                        aba ===
-                          "lidos"
-                          ? "#FFFFFF"
-                          : colors.secondary
-                      }
-                      pageColor={
-                        aba ===
-                          "lidos"
-                          ? colors.primary
-                          : colors.muted
-                      }
-                    />
-                  </View>
+                  <MaterialCommunityIcons
+                    name="book-open-page-variant-outline"
+                    size={22}
+                    color={
+                      aba === "lidos"
+                        ? colors.primary
+                        : colors.secondary
+                    }
+                  />
 
                   <Text
                     style={[
@@ -3391,7 +3284,7 @@ export default function Perfil() {
                       {
                         color:
                           aba ===
-                            "lidos"
+                          "lidos"
                             ? colors.primary
                             : colors.secondary,
                       },
@@ -3402,7 +3295,9 @@ export default function Perfil() {
                 </TouchableOpacity>
               </View>
 
-              {/* TÍTULO */}
+              {/* =================================================
+                  TÍTULO
+              ================================================= */}
 
               <View
                 style={
@@ -3420,7 +3315,7 @@ export default function Perfil() {
                     ]}
                   >
                     {aba ===
-                      "publicacoes"
+                    "publicacoes"
                       ? "As minhas publicações"
                       : "A minha biblioteca"}
                   </Text>
@@ -3435,7 +3330,7 @@ export default function Perfil() {
                     ]}
                   >
                     {aba ===
-                      "publicacoes"
+                    "publicacoes"
                       ? "Partilhas feitas por si."
                       : "Livros que já terminou de ler."}
                   </Text>
@@ -3471,7 +3366,8 @@ export default function Perfil() {
             renderVazio
           }
           ListFooterComponent={
-            dadosAtuais.length > 0 ? (
+            dadosAtuais.length >
+            0 ? (
               <View
                 style={
                   styles.listFooter
@@ -3481,9 +3377,9 @@ export default function Perfil() {
           }
         />
 
-        {/* ===================================================
+        {/* =================================================
             MENU
-        ==================================================== */}
+        ================================================= */}
 
         <Modal
           transparent
@@ -3600,17 +3496,13 @@ export default function Perfil() {
                   </Text>
                 </View>
 
-                <Text
-                  style={[
-                    styles.menuArrow,
-                    {
-                      color:
-                        colors.secondary,
-                    },
-                  ]}
-                >
-                  ›
-                </Text>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={22}
+                  color={
+                    colors.secondary
+                  }
+                />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -3674,25 +3566,21 @@ export default function Perfil() {
                   </Text>
                 </View>
 
-                <Text
-                  style={[
-                    styles.menuArrow,
-                    {
-                      color:
-                        colors.danger,
-                    },
-                  ]}
-                >
-                  ›
-                </Text>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={22}
+                  color={
+                    colors.danger
+                  }
+                />
               </TouchableOpacity>
             </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
 
-        {/* ===================================================
+        {/* =================================================
             COMENTÁRIOS
-        ==================================================== */}
+        ================================================= */}
 
         <Modal
           transparent
@@ -3773,9 +3661,11 @@ export default function Perfil() {
                       },
                     ]}
                   >
-                    {comentariosLista.length}{" "}
+                    {
+                      comentariosLista.length
+                    }{" "}
                     {comentariosLista.length ===
-                      1
+                    1
                       ? "comentário"
                       : "comentários"}
                   </Text>
@@ -3807,8 +3697,7 @@ export default function Perfil() {
               </View>
 
               {publicacaoSelecionada &&
-                !!publicacaoSelecionada
-                  .texto && (
+                !!publicacaoSelecionada.texto && (
                   <View
                     style={[
                       styles.commentPostPreview,
@@ -3949,39 +3838,17 @@ export default function Perfil() {
                           styles.commentItem
                         }
                       >
-                        {foto ? (
-                          <Image
-                            source={{
-                              uri: foto,
-                            }}
-                            style={
-                              styles.commentAvatar
-                            }
-                          />
-                        ) : (
-                          <View
-                            style={[
-                              styles.commentAvatar,
-                              styles.commentAvatarFallback,
-                              {
-                                backgroundColor:
-                                  colors.primaryDeep,
-                              },
-                            ]}
-                          >
-                            <Text
-                              style={
-                                styles.commentAvatarLetter
-                              }
-                            >
-                              {nome
-                                .charAt(
-                                  0,
-                                )
-                                .toUpperCase()}
-                            </Text>
-                          </View>
-                        )}
+                        <Avatar
+                          size={40}
+                          foto={foto}
+                          nome={nome}
+                          primaryDeep={
+                            colors.primaryDeep
+                          }
+                          white={
+                            colors.white
+                          }
+                        />
 
                         <View
                           style={[
@@ -4042,7 +3909,7 @@ export default function Perfil() {
                 />
               )}
 
-              {/* CAMPO DE COMENTÁRIO */}
+              {/* INPUT */}
 
               <View
                 style={[
@@ -4055,38 +3922,18 @@ export default function Perfil() {
                   },
                 ]}
               >
-                {usuario?.foto_perfil ? (
-                  <Image
-                    source={{
-                      uri: usuario.foto_perfil,
-                    }}
-                    style={
-                      styles.inputAvatar
-                    }
-                  />
-                ) : (
-                  <View
-                    style={[
-                      styles.inputAvatar,
-                      {
-                        backgroundColor:
-                          colors.primaryDeep,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={
-                        styles.inputAvatarLetter
-                      }
-                    >
-                      {(
-                        usuario?.nome?.charAt(
-                          0,
-                        ) || "U"
-                      ).toUpperCase()}
-                    </Text>
-                  </View>
-                )}
+                <Avatar
+                  size={38}
+                  foto={
+                    usuario?.foto_perfil ??
+                    null
+                  }
+                  nome={usuario?.nome}
+                  primaryDeep={
+                    colors.primaryDeep
+                  }
+                  white={colors.white}
+                />
 
                 <TextInput
                   value={
@@ -4133,7 +3980,7 @@ export default function Perfil() {
                     },
                     (!comentarioTexto.trim() ||
                       enviandoComentario) &&
-                    styles.sendCommentDisabled,
+                      styles.sendCommentDisabled,
                   ]}
                 >
                   {enviandoComentario ? (
@@ -4154,9 +4001,9 @@ export default function Perfil() {
           </KeyboardAvoidingView>
         </Modal>
 
-        {/* ===================================================
+        {/* =================================================
             EDITAR PERFIL
-        ==================================================== */}
+        ================================================= */}
 
         <Modal
           transparent
@@ -4268,19 +4115,17 @@ export default function Perfil() {
                     salvando
                   }
                 >
-                  <Text
-                    style={[
-                      styles.closeButtonText,
-                      {
-                        color:
-                          colors.text,
-                      },
-                    ]}
-                  >
-                    ×
-                  </Text>
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={21}
+                    color={
+                      colors.text
+                    }
+                  />
                 </TouchableOpacity>
               </View>
+
+              {/* FOTO */}
 
               <View
                 style={
@@ -4306,6 +4151,20 @@ export default function Perfil() {
                 >
                   <Avatar
                     size={108}
+                    foto={
+                      fotoLocal ??
+                      usuario?.foto_perfil ??
+                      null
+                    }
+                    nome={
+                      usuario?.nome
+                    }
+                    primaryDeep={
+                      colors.primaryDeep
+                    }
+                    white={
+                      colors.white
+                    }
                   />
 
                   <View
@@ -4317,13 +4176,11 @@ export default function Perfil() {
                       },
                     ]}
                   >
-                    <Text
-                      style={
-                        styles.cameraBadgeText
-                      }
-                    >
-                      +
-                    </Text>
+                    <MaterialCommunityIcons
+                      name="camera-plus"
+                      size={16}
+                      color="#FFFFFF"
+                    />
                   </View>
                 </TouchableOpacity>
 
@@ -4352,6 +4209,8 @@ export default function Perfil() {
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              {/* NOME */}
 
               <View
                 style={
@@ -4412,7 +4271,7 @@ export default function Perfil() {
                       colors.primary,
                   },
                   salvando &&
-                  styles.saveButtonDisabled,
+                    styles.saveButtonDisabled,
                 ]}
               >
                 {salvando ? (
@@ -4421,13 +4280,21 @@ export default function Perfil() {
                     color="#FFFFFF"
                   />
                 ) : (
-                  <Text
-                    style={
-                      styles.saveButtonText
-                    }
-                  >
-                    Guardar alterações
-                  </Text>
+                  <>
+                    <MaterialCommunityIcons
+                      name="check"
+                      size={20}
+                      color="#FFFFFF"
+                    />
+
+                    <Text
+                      style={
+                        styles.saveButtonText
+                      }
+                    >
+                      Guardar alterações
+                    </Text>
+                  </>
                 )}
               </TouchableOpacity>
             </View>
@@ -4451,38 +4318,39 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  /* =========================================================
+     TOP BAR
+  ========================================================= */
+
   topBar: {
-    minHeight: 76,
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 12,
+    minHeight: 68,
+    paddingHorizontal: 16,
+    paddingTop: 7,
+    paddingBottom: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
 
   eyebrow: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "900",
-    letterSpacing: 1.5,
-    marginBottom: 3,
+    letterSpacing: 1.4,
+    marginBottom: 2,
   },
 
   pageTitle: {
-    fontSize: 28,
+    fontSize: 25,
     fontWeight: "900",
-    letterSpacing: -0.6,
+    letterSpacing: -0.5,
   },
 
   menuButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
-    borderWidth: 1,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
-    gap: 4,
   },
 
   menuDot: {
@@ -4491,8 +4359,12 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
 
+  /* =========================================================
+     LISTA
+  ========================================================= */
+
   listContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 0,
     paddingBottom: 30,
   },
 
@@ -4501,68 +4373,70 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
   },
 
+  /* =========================================================
+     PERFIL
+  ========================================================= */
+
   profileCard: {
-    borderRadius: 25,
-    borderWidth: 1,
+    borderRadius: 0,
+    borderWidth: 0,
     overflow: "hidden",
-    marginBottom: 14,
+    marginBottom: 10,
   },
 
   profileTop: {
-    padding: 20,
+    paddingHorizontal: 18,
+    paddingTop: 22,
+    paddingBottom: 20,
     flexDirection: "row",
     alignItems: "center",
   },
 
   avatarWrapper: {
-    width: 102,
-    height: 102,
-    borderRadius: 51,
-    borderWidth: 2,
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    borderWidth: 3,
     alignItems: "center",
     justifyContent: "center",
     padding: 2,
   },
 
-  avatarImage: {
-    backgroundColor: "#E7F1EA",
-  },
-
   avatarFallback: {
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
 
   avatarLetter: {
-    color: "#FFFFFF",
     fontWeight: "900",
   },
 
   onlineBadge: {
     position: "absolute",
-    width: 17,
-    height: 17,
-    borderRadius: 9,
-    right: 3,
-    bottom: 8,
+    width: 19,
+    height: 19,
+    borderRadius: 10,
+    right: 2,
+    bottom: 7,
     borderWidth: 3,
   },
 
   profileInfo: {
     flex: 1,
-    marginLeft: 17,
+    marginLeft: 16,
   },
 
   profileName: {
-    fontSize: 22,
+    fontSize: 23,
     fontWeight: "900",
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
   },
 
   profileRole: {
     fontSize: 14,
     marginTop: 4,
-    fontWeight: "600",
+    fontWeight: "500",
   },
 
   activeBadge: {
@@ -4571,14 +4445,14 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     paddingHorizontal: 9,
     paddingVertical: 5,
-    borderRadius: 9,
-    marginTop: 10,
+    borderRadius: 12,
+    marginTop: 9,
   },
 
   activeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
     marginRight: 6,
   },
 
@@ -4596,11 +4470,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 15,
+    paddingVertical: 14,
   },
 
   statValue: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "900",
   },
 
@@ -4610,43 +4484,46 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
+  /* =========================================================
+     ABAS
+  ========================================================= */
+
   tabsContainer: {
-    minHeight: 66,
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 5,
+    minHeight: 58,
+    borderRadius: 0,
+    borderWidth: 0,
+    borderBottomWidth: 1,
+    padding: 0,
     flexDirection: "row",
-    marginBottom: 22,
+    marginBottom: 16,
   },
 
   tab: {
     flex: 1,
-    borderRadius: 14,
+    minHeight: 58,
+    borderRadius: 0,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 7,
-    gap: 8,
-  },
-
-  tabIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
+    gap: 7,
   },
 
   tabText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "800",
   },
 
+  /* =========================================================
+     CABEÇALHO DA SECÇÃO
+  ========================================================= */
+
   sectionHeader: {
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 13,
+    marginBottom: 10,
   },
 
   sectionTitle: {
@@ -4663,7 +4540,7 @@ const styles = StyleSheet.create({
     minWidth: 35,
     height: 35,
     paddingHorizontal: 9,
-    borderRadius: 12,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -4674,15 +4551,14 @@ const styles = StyleSheet.create({
   },
 
   /* =========================================================
-     PUBLICAÇÕES — VISUAL SOCIAL
+     PUBLICAÇÕES
   ========================================================= */
 
   publicacaoSocial: {
-    marginHorizontal: -16,
     paddingHorizontal: 16,
-    paddingTop: 15,
-    paddingBottom: 3,
-    borderBottomWidth: 1,
+    paddingTop: 16,
+    paddingBottom: 4,
+    borderBottomWidth: 8,
     marginBottom: 0,
   },
 
@@ -4691,22 +4567,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  miniAvatarWrapper: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
   publicacaoMeta: {
     flex: 1,
     marginLeft: 11,
   },
 
   publicacaoNome: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "800",
   },
 
@@ -4737,7 +4604,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
     marginTop: 13,
-    marginBottom: 11,
+    marginBottom: 12,
   },
 
   livroPublicacao: {
@@ -4753,7 +4620,7 @@ const styles = StyleSheet.create({
   livroPublicacaoIcon: {
     width: 58,
     height: 58,
-    borderRadius: 9,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -4777,13 +4644,12 @@ const styles = StyleSheet.create({
 
   publicacaoImagemSocial: {
     width: "100%",
-    height: 260,
-    marginHorizontal: 0,
-    backgroundColor: "#E7F1EA",
+    height: 280,
+    backgroundColor: "#E4E6EB",
   },
 
   postStats: {
-    minHeight: 39,
+    minHeight: 40,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -4810,8 +4676,7 @@ const styles = StyleSheet.create({
   },
 
   postActions: {
-    minHeight: 48,
-    borderTopWidth: 0,
+    minHeight: 49,
     flexDirection: "row",
     alignItems: "center",
   },
@@ -4835,10 +4700,11 @@ const styles = StyleSheet.create({
   ========================================================= */
 
   livroCard: {
-    borderRadius: 20,
+    marginHorizontal: 16,
+    borderRadius: 15,
     borderWidth: 1,
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 10,
     flexDirection: "row",
     minHeight: 142,
   },
@@ -4846,7 +4712,7 @@ const styles = StyleSheet.create({
   livroCapa: {
     width: 88,
     minHeight: 118,
-    borderRadius: 13,
+    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
@@ -4889,8 +4755,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    borderRadius: 9,
-    paddingHorizontal: 8,
+    borderRadius: 10,
+    paddingHorizontal: 9,
     paddingVertical: 5,
     marginTop: 12,
   },
@@ -4912,9 +4778,9 @@ const styles = StyleSheet.create({
   ========================================================= */
 
   emptyCard: {
-    borderRadius: 22,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 27,
+    padding: 28,
     alignItems: "center",
   },
 
@@ -5046,12 +4912,6 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
-  menuArrow: {
-    fontSize: 25,
-    fontWeight: "300",
-    marginRight: 5,
-  },
-
   /* =========================================================
      COMENTÁRIOS
   ========================================================= */
@@ -5144,26 +5004,9 @@ const styles = StyleSheet.create({
     marginBottom: 13,
   },
 
-  commentAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    marginRight: 9,
-  },
-
-  commentAvatarFallback: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  commentAvatarLetter: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-
   commentBubble: {
     flex: 1,
+    marginLeft: 9,
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 9,
@@ -5230,21 +5073,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  inputAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-  },
-
-  inputAvatarLetter: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "900",
-  },
-
   commentInput: {
     flex: 1,
     minHeight: 42,
@@ -5254,6 +5082,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
     fontSize: 13,
+    marginLeft: 8,
   },
 
   sendCommentButton: {
@@ -5270,7 +5099,7 @@ const styles = StyleSheet.create({
   },
 
   /* =========================================================
-     EDIÇÃO
+     EDITAR PERFIL
   ========================================================= */
 
   editOverlay: {
@@ -5328,12 +5157,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  closeButtonText: {
-    fontSize: 25,
-    lineHeight: 26,
-    fontWeight: "400",
-  },
-
   photoSection: {
     alignItems: "center",
     marginTop: 22,
@@ -5344,7 +5167,7 @@ const styles = StyleSheet.create({
     width: 116,
     height: 116,
     borderRadius: 58,
-    borderWidth: 2,
+    borderWidth: 3,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 10,
@@ -5354,20 +5177,13 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: -1,
     bottom: 2,
-    width: 31,
-    height: 31,
-    borderRadius: 16,
+    width: 33,
+    height: 33,
+    borderRadius: 17,
     borderWidth: 3,
     borderColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  cameraBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "700",
-    lineHeight: 21,
   },
 
   changePhotoText: {
@@ -5401,6 +5217,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 2,
+    flexDirection: "row",
+    gap: 8,
   },
 
   saveButtonDisabled: {
@@ -5413,3 +5231,4 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 });
+

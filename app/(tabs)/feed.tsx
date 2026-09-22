@@ -122,6 +122,15 @@ type PublicacaoSelecionada = {
   livroTitulo: string;
 };
 
+type EstatisticasDashboard = {
+  livrosLidos: number;
+  publicacoes: number;
+  usuarios: number;
+  livros: number;
+  curtidas: number;
+  comentarios: number;
+};
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -131,9 +140,20 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const LIVROS_SOCIAL_STATS_KEY = "feedLivrosLidosEstatisticas";
+const LIVROS_SOCIAL_STATS_KEY =
+  "feedLivrosLidosEstatisticas";
+
 const LIVROS_SOCIAL_COMENTARIOS_KEY =
   "feedLivrosLidosComentarios";
+
+const NOTIFICACOES_KEY =
+  "feedNotificacoes";
+
+const ULTIMOS_ITENS_NOTIFICADOS_KEY =
+  "feedUltimosItensNotificados";
+
+const NOTIFICACAO_CHANNEL_ID =
+  "booknook-atividade";
 
 export default function Feed() {
   const colorScheme = useColorScheme();
@@ -142,25 +162,41 @@ export default function Feed() {
   const { usuario } = useUsuario();
 
   const autoRefreshRef = useRef(false);
-  const operacoesCurtidaRef = useRef<Record<string, boolean>>({});
-  const comentarioEnviandoRef = useRef(false);
+  const operacoesCurtidaRef =
+    useRef<Record<string, boolean>>({});
+  const comentarioEnviandoRef =
+    useRef(false);
+  const sincronizandoRef =
+    useRef(false);
 
   const [perfilAtual, setPerfilAtual] =
     useState<PerfilAtual | null>(null);
 
-  const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [carregando, setCarregando] = useState(true);
-  const [avatarVersion, setAvatarVersion] = useState(Date.now());
+  const [feed, setFeed] =
+    useState<FeedItem[]>([]);
+
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [carregando, setCarregando] =
+    useState(true);
+
+  const [avatarVersion, setAvatarVersion] =
+    useState(Date.now());
 
   const [estatisticas, setEstatisticas] =
-    useState<Record<string, EstatisticaLocal>>({});
+    useState<Record<
+      string,
+      EstatisticaLocal
+    >>({});
 
   const [comentariosAbertos, setComentariosAbertos] =
     useState(false);
 
   const [publicacaoSelecionada, setPublicacaoSelecionada] =
-    useState<PublicacaoSelecionada | null>(null);
+    useState<PublicacaoSelecionada | null>(
+      null,
+    );
 
   const [comentarios, setComentarios] =
     useState<Comentario[]>([]);
@@ -189,337 +225,438 @@ export default function Feed() {
   const [notificacoes, setNotificacoes] =
     useState<NotificacaoLocal[]>([]);
 
+  const [menuAberto, setMenuAberto] =
+    useState(false);
+
+  const [dashboardAberto, setDashboardAberto] =
+    useState(false);
+
+  const [estatisticasDashboard, setEstatisticasDashboard] =
+    useState<EstatisticasDashboard>({
+      livrosLidos: 0,
+      publicacoes: 0,
+      usuarios: 0,
+      livros: 0,
+      curtidas: 0,
+      comentarios: 0,
+    });
+
+  const [carregandoDashboard, setCarregandoDashboard] =
+    useState(false);
+
   const colors = useMemo(
     () => ({
-      background: isDark ? "#111827" : "#F0F2F5",
-      card: isDark ? "#172033" : "#FFFFFF",
-      cardSecondary: isDark ? "#202B3D" : "#F7F8FA",
+      background: isDark
+        ? "#111827"
+        : "#F0F2F5",
 
-      text: isDark ? "#F5F7FA" : "#1C1E21",
-      secondary: isDark ? "#A8B3C2" : "#65676B",
+      card: isDark
+        ? "#172033"
+        : "#FFFFFF",
+
+      cardSecondary: isDark
+        ? "#202B3D"
+        : "#F7F8FA",
+
+      text: isDark
+        ? "#F5F7FA"
+        : "#1C1E21",
+
+      secondary: isDark
+        ? "#A8B3C2"
+        : "#65676B",
 
       primary: "#1877F2",
+
       primaryDark: "#0D65D9",
-      primaryLight: isDark ? "#17345D" : "#E7F3FF",
 
-      border: isDark ? "#29384D" : "#DADDE1",
-      softBorder: isDark ? "#26364A" : "#E4E6EB",
+      primaryLight: isDark
+        ? "#17345D"
+        : "#E7F3FF",
 
-      muted: isDark ? "#273449" : "#E4E6EB",
-      mutedText: isDark ? "#8997A9" : "#65676B",
+      border: isDark
+        ? "#29384D"
+        : "#DADDE1",
+
+      softBorder: isDark
+        ? "#26364A"
+        : "#E4E6EB",
+
+      muted: isDark
+        ? "#273449"
+        : "#E4E6EB",
+
+      mutedText: isDark
+        ? "#8997A9"
+        : "#65676B",
 
       white: "#FFFFFF",
 
       gold: "#F7B928",
-      goldSoft: isDark ? "#403719" : "#FFF4D6",
+
+      goldSoft: isDark
+        ? "#403719"
+        : "#FFF4D6",
 
       liked: "#E41E3F",
 
-      avatarBackground: isDark ? "#243752" : "#DCE7F7",
-      avatarText: isDark ? "#BBD6FF" : "#1877F2",
+      avatarBackground: isDark
+        ? "#243752"
+        : "#DCE7F7",
 
-      actionBackground: isDark ? "#202B3D" : "#F0F2F5",
-      actionText: isDark ? "#C7D0DC" : "#65676B",
+      avatarText: isDark
+        ? "#BBD6FF"
+        : "#1877F2",
 
-      modalOverlay: "rgba(0,0,0,0.55)",
+      actionBackground: isDark
+        ? "#202B3D"
+        : "#F0F2F5",
+
+      actionText: isDark
+        ? "#C7D0DC"
+        : "#65676B",
+
+      modalOverlay:
+        "rgba(0,0,0,0.55)",
     }),
     [isDark],
   );
 
-  const encontrarColuna = useCallback(
-    (
-      tabela: Record<string, any>,
-      nomes: string[],
-    ) => {
-      for (const nome of nomes) {
-        if (tabela?.[nome]) {
-          return tabela[nome];
+  const encontrarColuna =
+    useCallback(
+      (
+        tabela: Record<string, any>,
+        nomes: string[],
+      ) => {
+        for (const nome of nomes) {
+          if (tabela?.[nome]) {
+            return tabela[nome];
+          }
         }
-      }
 
-      return null;
-    },
-    [],
-  );
+        return null;
+      },
+      [],
+    );
 
-  const obterValor = useCallback(
-    (
-      objeto: Record<string, any>,
-      nomes: string[],
-      valorPadrao: any = null,
-    ) => {
-      for (const nome of nomes) {
-        if (
-          objeto &&
-          objeto[nome] !== undefined &&
-          objeto[nome] !== null
-        ) {
-          return objeto[nome];
+  const obterValor =
+    useCallback(
+      (
+        objeto: Record<string, any>,
+        nomes: string[],
+        valorPadrao: any = null,
+      ) => {
+        for (const nome of nomes) {
+          if (
+            objeto &&
+            objeto[nome] !== undefined &&
+            objeto[nome] !== null
+          ) {
+            return objeto[nome];
+          }
         }
-      }
 
-      return valorPadrao;
-    },
-    [],
-  );
+        return valorPadrao;
+      },
+      [],
+    );
 
-  const obterSessao = useCallback(async () => {
-    try {
-      const sessao =
-        await AsyncStorage.getItem("usuarioLogado");
+  const obterSessao =
+    useCallback(async () => {
+      try {
+        const sessao =
+          await AsyncStorage.getItem(
+            "usuarioLogado",
+          );
 
-      if (!sessao) {
+        if (!sessao) {
+          return null;
+        }
+
+        return JSON.parse(sessao);
+      } catch (error) {
+        console.error(
+          "Erro ao ler sessão:",
+          error,
+        );
+
         return null;
       }
+    }, []);
 
-      return JSON.parse(sessao);
-    } catch (error) {
-      console.error(
-        "Erro ao ler sessão:",
-        error,
-      );
+  const obterUsuarioAtualId =
+    useCallback(async () => {
+      const sessao =
+        await obterSessao();
 
-      return null;
-    }
-  }, []);
-
-  const obterUsuarioAtualId = useCallback(async () => {
-    const sessao = await obterSessao();
-
-    const id =
-      sessao?.id ??
-      usuario?.id;
-
-    if (
-      id === undefined ||
-      id === null ||
-      String(id).trim() === ""
-    ) {
-      return null;
-    }
-
-    return String(id);
-  }, [obterSessao, usuario?.id]);
-
-  const carregarPerfilAtual = useCallback(async () => {
-    try {
-      const sessao = await obterSessao();
-
-      const usuarioId =
+      const id =
         sessao?.id ??
         usuario?.id;
 
       if (
-        usuarioId === undefined ||
-        usuarioId === null ||
-        String(usuarioId).trim() === ""
+        id === undefined ||
+        id === null ||
+        String(id).trim() === ""
       ) {
-        setPerfilAtual(null);
-        return;
+        return null;
       }
 
-      const idColumn = encontrarColuna(
-        usuarios as any,
-        ["id"],
-      );
+      return String(id);
+    }, [
+      obterSessao,
+      usuario?.id,
+    ]);
 
-      if (!idColumn) {
-        throw new Error(
-          "A coluna usuarios.id não foi encontrada.",
-        );
-      }
+  const carregarPerfilAtual =
+    useCallback(async () => {
+      try {
+        const sessao =
+          await obterSessao();
 
-      const database = await getDb();
+        const usuarioId =
+          sessao?.id ??
+          usuario?.id;
 
-      const resultado = await database
-        .select()
-        .from(usuarios)
-        .where(
-          eq(
-            idColumn,
-            String(usuarioId),
-          ),
-        )
-        .limit(1);
+        if (
+          usuarioId === undefined ||
+          usuarioId === null ||
+          String(usuarioId).trim() === ""
+        ) {
+          setPerfilAtual(null);
+          return;
+        }
 
-      const usuarioBanco =
-        resultado[0] as any;
+        const idColumn =
+          encontrarColuna(
+            usuarios as any,
+            ["id"],
+          );
 
-      if (usuarioBanco) {
-        const nome = String(
-          usuarioBanco.nome ??
-          sessao?.nome ??
-          usuario?.nome ??
-          "Leitor",
-        );
+        if (!idColumn) {
+          throw new Error(
+            "A coluna usuarios.id não foi encontrada.",
+          );
+        }
 
-        const foto =
-          usuarioBanco.foto_perfil ??
-          null;
+        const database =
+          await getDb();
 
-        setPerfilAtual({
-          nome,
-          foto_perfil: foto,
-        });
+        const resultado =
+          await database
+            .select()
+            .from(usuarios)
+            .where(
+              eq(
+                idColumn,
+                String(usuarioId),
+              ),
+            )
+            .limit(1);
 
-        await AsyncStorage.setItem(
-          "usuarioLogado",
-          JSON.stringify({
-            id:
-              usuarioBanco.id ??
-              usuarioId,
+        const usuarioBanco =
+          resultado[0] as any;
+
+        if (usuarioBanco) {
+          const nome =
+            String(
+              usuarioBanco.nome ??
+              sessao?.nome ??
+              usuario?.nome ??
+              "Leitor",
+            );
+
+          const foto =
+            usuarioBanco.foto_perfil ??
+            null;
+
+          setPerfilAtual({
             nome,
             foto_perfil: foto,
-          }),
-        );
+          });
 
-        setAvatarVersion(Date.now());
-        return;
-      }
+          await AsyncStorage.setItem(
+            "usuarioLogado",
+            JSON.stringify({
+              id:
+                usuarioBanco.id ??
+                usuarioId,
+              nome,
+              foto_perfil: foto,
+            }),
+          );
 
-      setPerfilAtual({
-        nome:
-          sessao?.nome ??
-          usuario?.nome ??
-          "Leitor",
-        foto_perfil:
-          sessao?.foto_perfil ??
-          usuario?.foto_perfil ??
-          null,
-      });
+          setAvatarVersion(
+            Date.now(),
+          );
 
-      setAvatarVersion(Date.now());
-    } catch (error) {
-      console.error(
-        "Erro ao carregar perfil atual:",
-        error,
-      );
+          return;
+        }
 
-      const sessao =
-        await obterSessao();
-
-      if (sessao || usuario) {
         setPerfilAtual({
           nome:
             sessao?.nome ??
             usuario?.nome ??
             "Leitor",
+
           foto_perfil:
             sessao?.foto_perfil ??
             usuario?.foto_perfil ??
             null,
         });
 
-        setAvatarVersion(Date.now());
-      }
-    }
-  }, [
-    encontrarColuna,
-    obterSessao,
-    usuario,
-  ]);
+        setAvatarVersion(
+          Date.now(),
+        );
+      } catch (error) {
+        console.error(
+          "Erro ao carregar perfil atual:",
+          error,
+        );
 
-  const prepararUriFoto = useCallback(
-    (
-      foto: string | null | undefined,
-    ) => {
-      if (!foto) {
-        return null;
-      }
+        const sessao =
+          await obterSessao();
 
-      if (
-        foto.startsWith("file://") ||
-        foto.startsWith("content://") ||
-        foto.startsWith("ph://")
-      ) {
+        if (sessao || usuario) {
+          setPerfilAtual({
+            nome:
+              sessao?.nome ??
+              usuario?.nome ??
+              "Leitor",
+
+            foto_perfil:
+              sessao?.foto_perfil ??
+              usuario?.foto_perfil ??
+              null,
+          });
+
+          setAvatarVersion(
+            Date.now(),
+          );
+        }
+      }
+    }, [
+      encontrarColuna,
+      obterSessao,
+      usuario,
+    ]);
+
+  const prepararUriFoto =
+    useCallback(
+      (
+        foto:
+          | string
+          | null
+          | undefined,
+      ) => {
+        if (!foto) {
+          return null;
+        }
+
+        if (
+          foto.startsWith(
+            "file://",
+          ) ||
+          foto.startsWith(
+            "content://",
+          ) ||
+          foto.startsWith("ph://")
+        ) {
+          return foto;
+        }
+
+        if (
+          foto.startsWith(
+            "http://",
+          ) ||
+          foto.startsWith(
+            "https://",
+          )
+        ) {
+          const separador =
+            foto.includes("?")
+              ? "&"
+              : "?";
+
+          return `${foto}${separador}v=${avatarVersion}`;
+        }
+
         return foto;
-      }
+      },
+      [avatarVersion],
+    );
 
-      if (
-        foto.startsWith("http://") ||
-        foto.startsWith("https://")
-      ) {
-        const separador =
-          foto.includes("?")
-            ? "&"
-            : "?";
+  const renderAvatar =
+    useCallback(
+      (
+        foto:
+          | string
+          | null
+          | undefined,
+        nome: string,
+        tamanho: number,
+      ) => {
+        const uri =
+          prepararUriFoto(foto);
 
-        return `${foto}${separador}v=${avatarVersion}`;
-      }
+        if (uri) {
+          return (
+            <Image
+              key={`${uri}-${avatarVersion}`}
+              source={{ uri }}
+              style={[
+                styles.avatarImage,
+                {
+                  width: tamanho,
+                  height: tamanho,
+                  borderRadius:
+                    tamanho / 2,
+                },
+              ]}
+              resizeMode="cover"
+            />
+          );
+        }
 
-      return foto;
-    },
-    [avatarVersion],
-  );
+        const inicial =
+          nome?.trim()?.charAt(0) ||
+          "L";
 
-  const renderAvatar = useCallback(
-    (
-      foto: string | null | undefined,
-      nome: string,
-      tamanho: number,
-    ) => {
-      const uri =
-        prepararUriFoto(foto);
-
-      if (uri) {
         return (
-          <Image
-            key={`${uri}-${avatarVersion}`}
-            source={{ uri }}
+          <View
             style={[
-              styles.avatarImage,
+              styles.avatarFallback,
               {
                 width: tamanho,
                 height: tamanho,
                 borderRadius:
                   tamanho / 2,
-              },
-            ]}
-            resizeMode="cover"
-          />
-        );
-      }
-
-      const inicial =
-        nome?.trim()?.charAt(0) ||
-        "L";
-
-      return (
-        <View
-          style={[
-            styles.avatarFallback,
-            {
-              width: tamanho,
-              height: tamanho,
-              borderRadius:
-                tamanho / 2,
-              backgroundColor:
-                colors.avatarBackground,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.avatarLetter,
-              {
-                color:
-                  colors.avatarText,
-                fontSize:
-                  tamanho * 0.38,
+                backgroundColor:
+                  colors.avatarBackground,
               },
             ]}
           >
-            {inicial.toUpperCase()}
-          </Text>
-        </View>
-      );
-    },
-    [
-      prepararUriFoto,
-      avatarVersion,
-      colors,
-    ],
-  );
+            <Text
+              style={[
+                styles.avatarLetter,
+                {
+                  color:
+                    colors.avatarText,
+                  fontSize:
+                    tamanho * 0.38,
+                },
+              ]}
+            >
+              {inicial.toUpperCase()}
+            </Text>
+          </View>
+        );
+      },
+      [
+        prepararUriFoto,
+        avatarVersion,
+        colors,
+      ],
+    );
 
   const carregarEstatisticasLivros =
     useCallback(async () => {
@@ -641,7 +778,9 @@ export default function Feed() {
 
   const carregarEstatisticas =
     useCallback(
-      async (itens: FeedItem[]) => {
+      async (
+        itens: FeedItem[],
+      ) => {
         const usuarioId =
           await obterUsuarioAtualId();
 
@@ -756,15 +895,58 @@ export default function Feed() {
       ],
     );
 
+  const configurarCanalNotificacoes =
+    useCallback(async () => {
+      if (
+        Platform.OS !==
+        "android"
+      ) {
+        return;
+      }
+
+      try {
+        await Notifications.setNotificationChannelAsync(
+          NOTIFICACAO_CHANNEL_ID,
+          {
+            name: "Atividade do BookNook",
+            description:
+              "Notificações sobre livros lidos e novas publicações.",
+            importance:
+              Notifications.AndroidImportance.HIGH,
+            vibrationPattern: [
+              0,
+              250,
+              150,
+              250,
+            ],
+            sound: "default",
+            lockscreenVisibility:
+              Notifications.AndroidNotificationVisibility.PUBLIC,
+          },
+        );
+      } catch (error) {
+        console.warn(
+          "Erro ao configurar canal:",
+          error,
+        );
+      }
+    }, []);
+
   const solicitarPermissaoNotificacoes =
     useCallback(async () => {
-      if (Platform.OS === "web") {
+      if (
+        Platform.OS ===
+        "web"
+      ) {
         return false;
       }
 
       try {
+        await configurarCanalNotificacoes();
+
         const {
-          status: existingStatus,
+          status:
+          existingStatus,
         } =
           await Notifications.getPermissionsAsync();
 
@@ -795,14 +977,16 @@ export default function Feed() {
 
         return false;
       }
-    }, []);
+    }, [
+      configurarCanalNotificacoes,
+    ]);
 
   const carregarNotificacoes =
     useCallback(async () => {
       try {
         const armazenadas =
           await AsyncStorage.getItem(
-            "feedNotificacoes",
+            NOTIFICACOES_KEY,
           );
 
         if (!armazenadas) {
@@ -840,7 +1024,7 @@ export default function Feed() {
             lista.slice(0, 50);
 
           await AsyncStorage.setItem(
-            "feedNotificacoes",
+            NOTIFICACOES_KEY,
             JSON.stringify(
               limitada,
             ),
@@ -859,6 +1043,30 @@ export default function Feed() {
       [],
     );
 
+  const atualizarBadge =
+    useCallback(
+      async (
+        quantidade: number,
+      ) => {
+        if (
+          Platform.OS ===
+          "web"
+        ) {
+          return;
+        }
+
+        try {
+          await Notifications.setBadgeCountAsync(
+            Math.max(
+              0,
+              quantidade,
+            ),
+          );
+        } catch { }
+      },
+      [],
+    );
+
   const verificarNovasPublicacoes =
     useCallback(
       async (
@@ -872,12 +1080,9 @@ export default function Feed() {
             return;
           }
 
-          const chave =
-            "feedUltimosItensNotificados";
-
           const anteriorRaw =
             await AsyncStorage.getItem(
-              chave,
+              ULTIMOS_ITENS_NOTIFICADOS_KEY,
             );
 
           const anteriores: string[] =
@@ -898,7 +1103,7 @@ export default function Feed() {
             0
           ) {
             await AsyncStorage.setItem(
-              chave,
+              ULTIMOS_ITENS_NOTIFICADOS_KEY,
               JSON.stringify(
                 idsAtuais,
               ),
@@ -916,17 +1121,19 @@ export default function Feed() {
                 String(
                   item.data.usuarioId,
                 ) !==
-                String(usuarioId),
+                String(
+                  usuarioId,
+                ),
             );
+
+          await AsyncStorage.setItem(
+            ULTIMOS_ITENS_NOTIFICADOS_KEY,
+            JSON.stringify(
+              idsAtuais,
+            ),
+          );
 
           if (!novos.length) {
-            await AsyncStorage.setItem(
-              chave,
-              JSON.stringify(
-                idsAtuais,
-              ),
-            );
-
             return;
           }
 
@@ -941,28 +1148,30 @@ export default function Feed() {
                   "livro"
                 ) {
                   return {
-                    id: `livro-${item.data.id}`,
+                    id: `livro-${item.data.id}-${Date.now()}`,
                     tipo: "livro" as const,
                     titulo:
                       "Novo livro lido",
                     mensagem:
                       `${item.data.usuarioNome} terminou de ler "${item.data.livroTitulo}".`,
                     data:
-                      item.data.createdAt ||
+                      item.data
+                        .createdAt ||
                       new Date().toISOString(),
                     lida: false,
                   };
                 }
 
                 return {
-                  id: `critica-${item.data.id}`,
+                  id: `critica-${item.data.id}-${Date.now()}`,
                   tipo: "critica" as const,
                   titulo:
                     "Nova publicação",
                   mensagem:
                     `${item.data.usuarioNome} publicou uma crítica sobre "${item.data.livroTitulo}".`,
                   data:
-                    item.data.createdAt ||
+                    item.data
+                      .createdAt ||
                     new Date().toISOString(),
                   lida: false,
                 };
@@ -971,12 +1180,14 @@ export default function Feed() {
 
           const atuais =
             await AsyncStorage.getItem(
-              "feedNotificacoes",
+              NOTIFICACOES_KEY,
             );
 
           const listaAnterior: NotificacaoLocal[] =
             atuais
-              ? JSON.parse(atuais)
+              ? JSON.parse(
+                atuais,
+              )
               : [];
 
           const listaFinal = [
@@ -988,6 +1199,16 @@ export default function Feed() {
             listaFinal,
           );
 
+          const quantidade =
+            listaFinal.filter(
+              (item) =>
+                !item.lida,
+            ).length;
+
+          await atualizarBadge(
+            quantidade,
+          );
+
           if (permitido) {
             for (
               const notificacao of
@@ -997,23 +1218,24 @@ export default function Feed() {
                 {
                   content: {
                     title:
-                      notificacao.titulo,
+                      `BookNook · ${notificacao.titulo}`,
                     body:
                       notificacao.mensagem,
-                    sound: "default",
+                    sound:
+                      "default",
+                    ...(Platform.OS ===
+                      "android"
+                      ? {
+                        channelId:
+                          NOTIFICACAO_CHANNEL_ID,
+                      }
+                      : {}),
                   },
                   trigger: null,
                 },
               );
             }
           }
-
-          await AsyncStorage.setItem(
-            chave,
-            JSON.stringify(
-              idsAtuais,
-            ),
-          );
         } catch (error) {
           console.warn(
             "Erro ao verificar novas publicações:",
@@ -1025,13 +1247,15 @@ export default function Feed() {
         obterUsuarioAtualId,
         solicitarPermissaoNotificacoes,
         salvarNotificacoes,
+        atualizarBadge,
       ],
     );
 
   const carregarFeed =
     useCallback(async () => {
       try {
-        const database = await getDb();
+        const database =
+          await getDb();
 
         const livrosResultado =
           await database
@@ -1076,31 +1300,39 @@ export default function Feed() {
 
               return {
                 id: estante.id,
+
                 usuarioId:
                   usuarioBanco.id,
+
                 usuarioNome:
                   String(
                     usuarioBanco.nome ??
                     "Leitor",
                   ),
+
                 usuarioFoto:
                   usuarioBanco.foto_perfil ??
                   null,
+
                 livroId:
                   livro.id,
+
                 livroTitulo:
                   String(
                     livro.titulo ??
                     "Livro sem título",
                   ),
+
                 livroAutor:
                   String(
                     livro.autor ??
                     "Autor desconhecido",
                   ),
+
                 livroImagem:
                   livro.imagem ??
                   null,
+
                 createdAt:
                   String(
                     obterValor(
@@ -1158,41 +1390,51 @@ export default function Feed() {
 
                 return {
                   id: critica.id,
+
                   usuarioId:
                     usuarioBanco.id,
+
                   usuarioNome:
                     String(
                       usuarioBanco.nome ??
                       "Leitor",
                     ),
+
                   usuarioFoto:
                     usuarioBanco.foto_perfil ??
                     null,
+
                   livroId:
                     livro.id,
+
                   livroTitulo:
                     String(
                       livro.titulo ??
                       "Livro sem título",
                     ),
+
                   livroAutor:
                     String(
                       livro.autor ??
                       "Autor desconhecido",
                     ),
+
                   livroImagem:
                     livro.imagem ??
                     null,
+
                   texto:
                     String(
                       critica.texto ??
                       "",
                     ),
+
                   nota:
                     Number(
                       critica.nota ??
                       0,
                     ),
+
                   createdAt:
                     String(
                       obterValor(
@@ -1206,6 +1448,7 @@ export default function Feed() {
                         "",
                       ),
                     ),
+
                   curtidas: 0,
                   comentarios: 0,
                 };
@@ -1228,6 +1471,7 @@ export default function Feed() {
               data: item,
             }),
           ),
+
           ...criticasPosts.map(
             (item) => ({
               type:
@@ -1279,14 +1523,154 @@ export default function Feed() {
       verificarNovasPublicacoes,
     ]);
 
+  const carregarDashboard =
+    useCallback(async () => {
+      if (carregandoDashboard) {
+        return;
+      }
+
+      try {
+        setCarregandoDashboard(
+          true,
+        );
+
+        const database =
+          await getDb();
+
+        const [
+          livrosLidosResultado,
+          publicacoesResultado,
+          usuariosResultado,
+          livrosResultado,
+        ] = await Promise.all([
+          database
+            .select()
+            .from(estantes)
+            .where(
+              eq(
+                estantes.status,
+                "lido",
+              ),
+            ),
+
+          database
+            .select()
+            .from(criticas),
+
+          database
+            .select()
+            .from(usuarios),
+
+          database
+            .select()
+            .from(livros),
+        ]);
+
+        const statsLivros =
+          await carregarEstatisticasLivros();
+
+        let curtidas = 0;
+        let comentarios =
+          0;
+
+        Object.values(
+          statsLivros,
+        ).forEach(
+          (estatistica) => {
+            curtidas += Number(
+              estatistica.curtidas ??
+              0,
+            );
+
+            comentarios += Number(
+              estatistica.comentarios ??
+              0,
+            );
+          },
+        );
+
+        for (
+          const item of feed
+        ) {
+          if (
+            item.type ===
+            "critica"
+          ) {
+            const chave =
+              `critica-${item.data.id}`;
+
+            const estatistica =
+              estatisticas[chave];
+
+            if (estatistica) {
+              curtidas += Number(
+                estatistica.curtidas ??
+                0,
+              );
+
+              comentarios += Number(
+                estatistica.comentarios ??
+                0,
+              );
+            }
+          }
+        }
+
+        setEstatisticasDashboard({
+          livrosLidos:
+            livrosLidosResultado.length,
+
+          publicacoes:
+            publicacoesResultado.length,
+
+          usuarios:
+            usuariosResultado.length,
+
+          livros:
+            livrosResultado.length,
+
+          curtidas,
+
+          comentarios,
+        });
+      } catch (error) {
+        console.error(
+          "Erro ao carregar dashboard:",
+          error,
+        );
+      } finally {
+        setCarregandoDashboard(
+          false,
+        );
+      }
+    }, [
+      carregandoDashboard,
+      carregarEstatisticasLivros,
+      feed,
+      estatisticas,
+    ]);
+
   const sincronizarTudo =
     useCallback(
       async (
         mostrarLoading = false,
       ) => {
+        if (
+          sincronizandoRef.current
+        ) {
+          return;
+        }
+
+        sincronizandoRef.current =
+          true;
+
         try {
-          if (mostrarLoading) {
-            setCarregando(true);
+          if (
+            mostrarLoading
+          ) {
+            setCarregando(
+              true,
+            );
           }
 
           await carregarPerfilAtual();
@@ -1298,8 +1682,16 @@ export default function Feed() {
             error,
           );
         } finally {
-          setCarregando(false);
-          setRefreshing(false);
+          setCarregando(
+            false,
+          );
+
+          setRefreshing(
+            false,
+          );
+
+          sincronizandoRef.current =
+            false;
         }
       },
       [
@@ -1310,20 +1702,30 @@ export default function Feed() {
     );
 
   useEffect(() => {
-    sincronizarTudo(true);
-  }, [sincronizarTudo]);
+    sincronizarTudo(
+      true,
+    );
+  }, [
+    sincronizarTudo,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!autoRefreshRef.current) {
+      if (
+        !autoRefreshRef.current
+      ) {
         autoRefreshRef.current =
           true;
 
         return;
       }
 
-      sincronizarTudo(false);
-    }, [sincronizarTudo]),
+      sincronizarTudo(
+        false,
+      );
+    }, [
+      sincronizarTudo,
+    ]),
   );
 
   useEffect(() => {
@@ -1332,17 +1734,48 @@ export default function Feed() {
     solicitarPermissaoNotificacoes,
   ]);
 
+  /*
+   * Mantém o Feed sincronizado enquanto
+   * o usuário está na tela.
+   *
+   * Assim, se outro usuário marcar um livro
+   * como lido ou publicar uma crítica,
+   * o BookNook poderá detectar a nova atividade
+   * e gerar a notificação local.
+   */
+  useEffect(() => {
+    const intervalo =
+      setInterval(() => {
+        sincronizarTudo(
+          false,
+        );
+      }, 15000);
+
+    return () =>
+      clearInterval(
+        intervalo,
+      );
+  }, [
+    sincronizarTudo,
+  ]);
+
   const onRefresh =
     useCallback(async () => {
-      setRefreshing(true);
+      setRefreshing(
+        true,
+      );
 
       await carregarPerfilAtual();
       await carregarFeed();
+      await carregarNotificacoes();
 
-      setRefreshing(false);
+      setRefreshing(
+        false,
+      );
     }, [
       carregarPerfilAtual,
       carregarFeed,
+      carregarNotificacoes,
     ]);
 
   const nomeAtual =
@@ -1358,16 +1791,19 @@ export default function Feed() {
   const alternarCurtida =
     useCallback(
       async (
-        id: number | string,
-        tipo: "livro" | "critica",
+        id:
+          | number
+          | string,
+        tipo:
+          | "livro"
+          | "critica",
       ) => {
         const chave =
           `${tipo}-${id}`;
 
         if (
-          operacoesCurtidaRef.current[
-          chave
-          ]
+          operacoesCurtidaRef
+            .current[chave]
         ) {
           return;
         }
@@ -1402,10 +1838,13 @@ export default function Feed() {
             curtiu: false,
           };
 
-        const novoEstadoOtimista = {
+        const novoEstadoOtimista =
+        {
           ...estadoAnterior,
+
           curtiu:
             !estadoAnterior.curtiu,
+
           curtidas:
             Math.max(
               0,
@@ -1426,7 +1865,8 @@ export default function Feed() {
 
         try {
           if (
-            tipo === "critica"
+            tipo ===
+            "critica"
           ) {
             const novoEstado =
               await toggleCurtida(
@@ -1488,9 +1928,8 @@ export default function Feed() {
             "Ocorreu um erro ao atualizar a curtida. Tente novamente.",
           );
         } finally {
-          delete operacoesCurtidaRef.current[
-            chave
-          ];
+          delete operacoesCurtidaRef
+            .current[chave];
 
           setCurtidasProcessando(
             (atual) => ({
@@ -1519,9 +1958,11 @@ export default function Feed() {
 
         setNovoComentario("");
         setComentarios([]);
+
         setComentariosAbertos(
           true,
         );
+
         setCarregandoComentarios(
           true,
         );
@@ -1591,7 +2032,8 @@ export default function Feed() {
   const enviarComentario =
     useCallback(async () => {
       if (
-        comentarioEnviandoRef.current
+        comentarioEnviandoRef
+          .current
       ) {
         return;
       }
@@ -1656,13 +2098,18 @@ export default function Feed() {
             ComentarioLocal = {
             id:
               `${chave}-${Date.now()}`,
+
             postId: chave,
+
             texto,
+
             createdAt:
               new Date().toISOString(),
+
             usuario: {
               nome:
                 nomeAtual,
+
               foto_perfil:
                 fotoAtual,
             },
@@ -1707,8 +2154,10 @@ export default function Feed() {
 
             return {
               ...atual,
+
               [chaveEstatistica]: {
                 ...anterior,
+
                 comentarios:
                   anterior.comentarios +
                   1,
@@ -1736,6 +2185,7 @@ export default function Feed() {
 
           todos[chave] = {
             ...anterior,
+
             comentarios:
               anterior.comentarios +
               1,
@@ -1827,11 +2277,12 @@ export default function Feed() {
           const dados =
             item.data;
 
-          const campos: string[] = [
-            dados.livroTitulo,
-            dados.livroAutor,
-            dados.usuarioNome,
-          ];
+          const campos: string[] =
+            [
+              dados.livroTitulo,
+              dados.livroAutor,
+              dados.usuarioNome,
+            ];
 
           if (
             item.type ===
@@ -1891,6 +2342,21 @@ export default function Feed() {
       carregarNotificacoes,
     ]);
 
+  const abrirMenu =
+    useCallback(() => {
+      setMenuAberto(true);
+    }, []);
+
+  const abrirDashboard =
+    useCallback(async () => {
+      setMenuAberto(false);
+      setDashboardAberto(true);
+
+      await carregarDashboard();
+    }, [
+      carregarDashboard,
+    ]);
+
   const marcarTodasNotificacoesComoLidas =
     useCallback(async () => {
       const atualizadas =
@@ -1905,18 +2371,11 @@ export default function Feed() {
         atualizadas,
       );
 
-      if (
-        Platform.OS !== "web"
-      ) {
-        try {
-          await Notifications.setBadgeCountAsync(
-            0,
-          );
-        } catch { }
-      }
+      await atualizarBadge(0);
     }, [
       notificacoes,
       salvarNotificacoes,
+      atualizarBadge,
     ]);
 
   const renderLivro =
@@ -2653,7 +3112,9 @@ export default function Feed() {
                       },
                     ]}
                   >
-                    {nota.toFixed(1)}
+                    {nota.toFixed(
+                      1,
+                    )}
                   </Text>
                 </View>
               </View>
@@ -2889,6 +3350,7 @@ export default function Feed() {
             nome:
               usuario.nome ??
               "Leitor",
+
             foto_perfil:
               usuario.foto_perfil ??
               null,
@@ -2919,78 +3381,106 @@ export default function Feed() {
               },
             ]}
           >
-            {pesquisaAberta ? (
-              <View
+            <View
+              style={
+                styles.brandArea
+              }
+            >
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={
+                  abrirMenu
+                }
                 style={[
-                  styles.searchContainer,
+                  styles.menuButton,
                   {
                     backgroundColor:
                       colors.actionBackground,
-                    borderColor:
-                      colors.border,
                   },
                 ]}
               >
                 <MaterialCommunityIcons
-                  name="magnify"
-                  size={21}
+                  name="menu"
+                  size={23}
                   color={
-                    colors.secondary
+                    colors.text
                   }
                 />
+              </TouchableOpacity>
 
-                <TextInput
-                  value={
-                    textoPesquisa
-                  }
-                  onChangeText={
-                    setTextoPesquisa
-                  }
-                  autoFocus
-                  placeholder="Pesquisar livros..."
-                  placeholderTextColor={
-                    colors.mutedText
-                  }
+              {pesquisaAberta ? (
+                <View
                   style={[
-                    styles.searchInput,
+                    styles.searchContainer,
                     {
-                      color:
-                        colors.text,
+                      backgroundColor:
+                        colors.actionBackground,
+                      borderColor:
+                        colors.border,
                     },
                   ]}
-                />
-
-                {!!textoPesquisa && (
-                  <TouchableOpacity
-                    onPress={() =>
-                      setTextoPesquisa(
-                        "",
-                      )
+                >
+                  <MaterialCommunityIcons
+                    name="magnify"
+                    size={21}
+                    color={
+                      colors.secondary
                     }
-                  >
-                    <MaterialCommunityIcons
-                      name="close-circle"
-                      size={19}
-                      color={
-                        colors.secondary
+                  />
+
+                  <TextInput
+                    value={
+                      textoPesquisa
+                    }
+                    onChangeText={
+                      setTextoPesquisa
+                    }
+                    autoFocus
+                    placeholder="Pesquisar livros..."
+                    placeholderTextColor={
+                      colors.mutedText
+                    }
+                    style={[
+                      styles.searchInput,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  />
+
+                  {!!textoPesquisa && (
+                    <TouchableOpacity
+                      onPress={() =>
+                        setTextoPesquisa(
+                          "",
+                        )
                       }
-                    />
-                  </TouchableOpacity>
-                )}
-              </View>
-            ) : (
-              <Text
-                style={[
-                  styles.feedTitle,
-                  {
-                    color:
-                      colors.text,
-                  },
-                ]}
-              >
-                Feed
-              </Text>
-            )}
+                    >
+                      <MaterialCommunityIcons
+                        name="close-circle"
+                        size={19}
+                        color={
+                          colors.secondary
+                        }
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ) : (
+                <Text
+                  style={[
+                    styles.bookNookTitle,
+                    {
+                      color:
+                        colors.primary,
+                    },
+                  ]}
+                >
+                  BookNook
+                </Text>
+              )}
+            </View>
 
             <View
               style={
@@ -3147,6 +3637,7 @@ export default function Feed() {
         textoPesquisa,
         abrirPesquisa,
         abrirNotificacoes,
+        abrirMenu,
         quantidadeNaoLidas,
         feedFiltrado.length,
       ],
@@ -3376,7 +3867,7 @@ export default function Feed() {
             },
           ]}
         >
-          A carregar o Feed
+          A carregar o BookNook
         </Text>
 
         <Text
@@ -3467,6 +3958,708 @@ export default function Feed() {
           />
         }
       />
+
+      {/* =====================================================
+          MENU LATERAL / DASHBOARD
+          ===================================================== */}
+
+      <Modal
+        visible={
+          menuAberto
+        }
+        animationType="fade"
+        transparent
+        onRequestClose={() =>
+          setMenuAberto(false)
+        }
+      >
+        <View
+          style={[
+            styles.menuOverlay,
+            {
+              backgroundColor:
+                colors.modalOverlay,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.sideMenu,
+              {
+                backgroundColor:
+                  colors.card,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.sideMenuHeader,
+                {
+                  borderBottomColor:
+                    colors.border,
+                },
+              ]}
+            >
+              {renderAvatar(
+                fotoAtual,
+                nomeAtual,
+                48,
+              )}
+
+              <View
+                style={
+                  styles.sideMenuUser
+                }
+              >
+                <Text
+                  style={[
+                    styles.sideMenuUserName,
+                    {
+                      color:
+                        colors.text,
+                    },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {nomeAtual}
+                </Text>
+
+                <Text
+                  style={[
+                    styles.sideMenuUserSubtitle,
+                    {
+                      color:
+                        colors.secondary,
+                    },
+                  ]}
+                >
+                  Comunidade BookNook
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={() =>
+                  setMenuAberto(
+                    false,
+                  )
+                }
+                style={[
+                  styles.closeButton,
+                  {
+                    backgroundColor:
+                      colors.actionBackground,
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={21}
+                  color={
+                    colors.actionText
+                  }
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View
+              style={
+                styles.sideMenuContent
+              }
+            >
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={
+                  abrirDashboard
+                }
+                style={[
+                  styles.menuItem,
+                  {
+                    backgroundColor:
+                      colors.primaryLight,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.menuItemIcon,
+                    {
+                      backgroundColor:
+                        colors.primary,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="view-dashboard-outline"
+                    size={22}
+                    color={
+                      colors.white
+                    }
+                  />
+                </View>
+
+                <View
+                  style={
+                    styles.menuItemInfo
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.menuItemTitle,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  >
+                    Dashboard
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.menuItemSubtitle,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    Estatísticas do BookNook
+                  </Text>
+                </View>
+
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={22}
+                  color={
+                    colors.primary
+                  }
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => {
+                  setMenuAberto(
+                    false,
+                  );
+
+                  abrirPesquisa();
+                }}
+                style={[
+                  styles.menuItem,
+                  {
+                    backgroundColor:
+                      colors.actionBackground,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.menuItemIcon,
+                    {
+                      backgroundColor:
+                        colors.cardSecondary,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="magnify"
+                    size={22}
+                    color={
+                      colors.primary
+                    }
+                  />
+                </View>
+
+                <View
+                  style={
+                    styles.menuItemInfo
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.menuItemTitle,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  >
+                    Pesquisar
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.menuItemSubtitle,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    Encontrar livros e publicações
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => {
+                  setMenuAberto(
+                    false,
+                  );
+
+                  abrirNotificacoes();
+                }}
+                style={[
+                  styles.menuItem,
+                  {
+                    backgroundColor:
+                      colors.actionBackground,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.menuItemIcon,
+                    {
+                      backgroundColor:
+                        colors.cardSecondary,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="bell-outline"
+                    size={22}
+                    color={
+                      colors.primary
+                    }
+                  />
+                </View>
+
+                <View
+                  style={
+                    styles.menuItemInfo
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.menuItemTitle,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  >
+                    Notificações
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.menuItemSubtitle,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    Atividade recente
+                  </Text>
+                </View>
+
+                {quantidadeNaoLidas >
+                  0 && (
+                    <View
+                      style={
+                        styles.menuNotificationCount
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.menuNotificationCountText
+                        }
+                      >
+                        {quantidadeNaoLidas >
+                          9
+                          ? "9+"
+                          : quantidadeNaoLidas}
+                      </Text>
+                    </View>
+                  )}
+              </TouchableOpacity>
+            </View>
+
+            <View
+              style={[
+                styles.sideMenuFooter,
+                {
+                  borderTopColor:
+                    colors.border,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="book-open-page-variant"
+                size={18}
+                color={
+                  colors.primary
+                }
+              />
+
+              <Text
+                style={[
+                  styles.sideMenuFooterText,
+                  {
+                    color:
+                      colors.secondary,
+                  },
+                ]}
+              >
+                BookNook · Comunidade de leitores
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={
+              styles.menuOutside
+            }
+            activeOpacity={1}
+            onPress={() =>
+              setMenuAberto(
+                false,
+              )
+            }
+          />
+        </View>
+      </Modal>
+
+      {/* =====================================================
+          DASHBOARD
+          ===================================================== */}
+
+      <Modal
+        visible={
+          dashboardAberto
+        }
+        animationType="slide"
+        transparent
+        onRequestClose={() =>
+          setDashboardAberto(
+            false,
+          )
+        }
+      >
+        <View
+          style={[
+            styles.modalContainer,
+            {
+              backgroundColor:
+                colors.modalOverlay,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.dashboardModal,
+              {
+                backgroundColor:
+                  colors.background,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.dashboardHeader,
+                {
+                  backgroundColor:
+                    colors.card,
+                  borderBottomColor:
+                    colors.border,
+                },
+              ]}
+            >
+              <View
+                style={
+                  styles.dashboardHeaderInfo
+                }
+              >
+                <Text
+                  style={[
+                    styles.dashboardTitle,
+                    {
+                      color:
+                        colors.text,
+                    },
+                  ]}
+                >
+                  Dashboard
+                </Text>
+
+                <Text
+                  style={[
+                    styles.dashboardSubtitle,
+                    {
+                      color:
+                        colors.secondary,
+                    },
+                  ]}
+                >
+                  Visão geral da comunidade BookNook
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() =>
+                  setDashboardAberto(
+                    false,
+                  )
+                }
+                style={[
+                  styles.closeButton,
+                  {
+                    backgroundColor:
+                      colors.actionBackground,
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={21}
+                  color={
+                    colors.actionText
+                  }
+                />
+              </TouchableOpacity>
+            </View>
+
+            {carregandoDashboard ? (
+              <View
+                style={
+                  styles.dashboardLoading
+                }
+              >
+                <ActivityIndicator
+                  size="large"
+                  color={
+                    colors.primary
+                  }
+                />
+
+                <Text
+                  style={[
+                    styles.dashboardLoadingText,
+                    {
+                      color:
+                        colors.secondary,
+                    },
+                  ]}
+                >
+                  A calcular estatísticas...
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={[
+                  {
+                    key: "livrosLidos",
+                    title: "Livros lidos",
+                    value:
+                      estatisticasDashboard.livrosLidos,
+                    icon: "book-check-outline",
+                    color:
+                      colors.primary,
+                  },
+
+                  {
+                    key: "publicacoes",
+                    title: "Publicações",
+                    value:
+                      estatisticasDashboard.publicacoes,
+                    icon: "post-outline",
+                    color:
+                      colors.gold,
+                  },
+
+                  {
+                    key: "usuarios",
+                    title: "Leitores",
+                    value:
+                      estatisticasDashboard.usuarios,
+                    icon: "account-group-outline",
+                    color:
+                      "#42B72A",
+                  },
+
+                  {
+                    key: "livros",
+                    title: "Livros",
+                    value:
+                      estatisticasDashboard.livros,
+                    icon: "bookshelf",
+                    color:
+                      "#8B5CF6",
+                  },
+
+                  {
+                    key: "curtidas",
+                    title: "Gostos",
+                    value:
+                      estatisticasDashboard.curtidas,
+                    icon: "thumb-up-outline",
+                    color:
+                      "#E41E3F",
+                  },
+
+                  {
+                    key: "comentarios",
+                    title: "Comentários",
+                    value:
+                      estatisticasDashboard.comentarios,
+                    icon: "comment-outline",
+                    color:
+                      "#00A884",
+                  },
+                ]}
+                numColumns={2}
+                keyExtractor={(
+                  item,
+                ) => item.key}
+                contentContainerStyle={
+                  styles.dashboardContent
+                }
+                columnWrapperStyle={
+                  styles.dashboardRow
+                }
+                showsVerticalScrollIndicator={
+                  false
+                }
+                renderItem={({
+                  item,
+                }) => (
+                  <View
+                    style={[
+                      styles.dashboardCard,
+                      {
+                        backgroundColor:
+                          colors.card,
+                        borderColor:
+                          colors.border,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.dashboardCardIcon,
+                        {
+                          backgroundColor:
+                            isDark
+                              ? `${item.color}25`
+                              : `${item.color}15`,
+                        },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name={
+                          item.icon as any
+                        }
+                        size={24}
+                        color={
+                          item.color
+                        }
+                      />
+                    </View>
+
+                    <Text
+                      style={[
+                        styles.dashboardCardValue,
+                        {
+                          color:
+                            colors.text,
+                        },
+                      ]}
+                    >
+                      {item.value}
+                    </Text>
+
+                    <Text
+                      style={[
+                        styles.dashboardCardTitle,
+                        {
+                          color:
+                            colors.secondary,
+                        },
+                      ]}
+                    >
+                      {item.title}
+                    </Text>
+                  </View>
+                )}
+                ListHeaderComponent={
+                  <View>
+                    <View
+                      style={[
+                        styles.dashboardWelcome,
+                        {
+                          backgroundColor:
+                            colors.primary,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={
+                          styles.dashboardWelcomeText
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.dashboardWelcomeTitle
+                          }
+                        >
+                          A tua comunidade
+                        </Text>
+
+                        <Text
+                          style={
+                            styles.dashboardWelcomeDescription
+                          }
+                        >
+                          Acompanha a atividade dos leitores e o crescimento do BookNook.
+                        </Text>
+                      </View>
+
+                      <MaterialCommunityIcons
+                        name="chart-line"
+                        size={48}
+                        color={
+                          colors.white
+                        }
+                      />
+                    </View>
+
+                    <Text
+                      style={[
+                        styles.dashboardSectionTitle,
+                        {
+                          color:
+                            colors.text,
+                        },
+                      ]}
+                    >
+                      Estatísticas
+                    </Text>
+                  </View>
+                }
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* =====================================================
+          NOTIFICAÇÕES
+          ===================================================== */}
 
       <Modal
         visible={
@@ -3612,6 +4805,7 @@ export default function Feed() {
                         item.lida
                           ? colors.card
                           : colors.primaryLight,
+
                       borderBottomColor:
                         colors.softBorder,
                     },
@@ -3749,7 +4943,7 @@ export default function Feed() {
                       },
                     ]}
                   >
-                    Quando houver nova atividade de leitura ou publicações, elas aparecerão aqui.
+                    Quando houver nova atividade de leitura ou publicação, ela aparecerá aqui.
                   </Text>
                 </View>
               }
@@ -3757,6 +4951,10 @@ export default function Feed() {
           </View>
         </View>
       </Modal>
+
+      {/* =====================================================
+          COMENTÁRIOS
+          ===================================================== */}
 
       <Modal
         visible={
@@ -4062,13 +5260,41 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
 
+  /* =====================================================
+     TOPO BOOKNOOK / FACEBOOK
+     ===================================================== */
+
   feedTop: {
     minHeight: 66,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     borderBottomWidth: 1,
+  },
+
+  brandArea: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 0,
+  },
+
+  menuButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent:
+      "center",
+    marginRight: 10,
+  },
+
+  bookNookTitle: {
+    fontSize: 25,
+    fontWeight: "900",
+    letterSpacing: -0.8,
   },
 
   feedTitle: {
@@ -4080,15 +5306,17 @@ const styles = StyleSheet.create({
   feedTopActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 9,
+    gap: 8,
+    marginLeft: 8,
   },
 
   topAction: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     position: "relative",
   },
 
@@ -4101,10 +5329,13 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     paddingHorizontal: 4,
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#E41E3F",
+    justifyContent:
+      "center",
+    backgroundColor:
+      "#E41E3F",
     borderWidth: 2,
-    borderColor: "#FFFFFF",
+    borderColor:
+      "#FFFFFF",
   },
 
   notificationBadgeText: {
@@ -4121,7 +5352,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     flexDirection: "row",
     alignItems: "center",
-    marginRight: 10,
+    marginRight: 8,
   },
 
   searchInput: {
@@ -4155,6 +5386,10 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
+  /* =====================================================
+     POSTS
+     ===================================================== */
+
   facebookPost: {
     marginBottom: 9,
     paddingTop: 14,
@@ -4168,12 +5403,14 @@ const styles = StyleSheet.create({
   },
 
   avatarImage: {
-    backgroundColor: "#E7EEF8",
+    backgroundColor:
+      "#E7EEF8",
   },
 
   avatarFallback: {
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
 
   avatarLetter: {
@@ -4215,7 +5452,8 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 17,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
 
   postDescription: {
@@ -4235,6 +5473,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     minHeight: 108,
+    borderRadius: 2,
+    overflow: "hidden",
   },
 
   bookPostCover: {
@@ -4246,14 +5486,16 @@ const styles = StyleSheet.create({
     width: 82,
     height: 108,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
 
   bookPostInfo: {
     flex: 1,
     paddingHorizontal: 13,
     paddingVertical: 13,
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
 
   bookPostTitle: {
@@ -4284,6 +5526,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     minHeight: 108,
+    borderRadius: 2,
+    overflow: "hidden",
   },
 
   reviewPostCover: {
@@ -4295,14 +5539,16 @@ const styles = StyleSheet.create({
     width: 82,
     height: 108,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
 
   reviewPostInfo: {
     flex: 1,
     paddingHorizontal: 13,
     paddingVertical: 13,
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
 
   reviewPostTitle: {
@@ -4344,7 +5590,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
   },
 
   summaryLeft: {
@@ -4357,7 +5604,8 @@ const styles = StyleSheet.create({
     height: 19,
     borderRadius: 10,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
 
   summaryText: {
@@ -4382,7 +5630,8 @@ const styles = StyleSheet.create({
     height: 42,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     gap: 7,
     borderRadius: 7,
   },
@@ -4391,6 +5640,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
+
+  /* =====================================================
+     EMPTY / LOADING
+     ===================================================== */
 
   emptyState: {
     marginHorizontal: 15,
@@ -4405,7 +5658,8 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 36,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     marginBottom: 15,
   },
 
@@ -4430,7 +5684,8 @@ const styles = StyleSheet.create({
   loadingPage: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     paddingHorizontal: 30,
   },
 
@@ -4439,7 +5694,8 @@ const styles = StyleSheet.create({
     height: 82,
     borderRadius: 27,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     marginBottom: 22,
   },
 
@@ -4455,9 +5711,254 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
+  /* =====================================================
+     MENU
+     ===================================================== */
+
+  menuOverlay: {
+    flex: 1,
+    flexDirection: "row",
+  },
+
+  sideMenu: {
+    width: "86%",
+    maxWidth: 380,
+    height: "100%",
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+    elevation: 15,
+  },
+
+  menuOutside: {
+    flex: 1,
+  },
+
+  sideMenuHeader: {
+    minHeight: 100,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+  },
+
+  sideMenuUser: {
+    flex: 1,
+    marginLeft: 11,
+    marginRight: 10,
+  },
+
+  sideMenuUserName: {
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  sideMenuUserSubtitle: {
+    fontSize: 11,
+    marginTop: 3,
+  },
+
+  sideMenuContent: {
+    flex: 1,
+    padding: 14,
+  },
+
+  menuItem: {
+    minHeight: 70,
+    borderRadius: 12,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 9,
+  },
+
+  menuItemIcon: {
+    width: 43,
+    height: 43,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent:
+      "center",
+  },
+
+  menuItemInfo: {
+    flex: 1,
+    marginLeft: 11,
+  },
+
+  menuItemTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  menuItemSubtitle: {
+    fontSize: 10,
+    marginTop: 3,
+  },
+
+  menuNotificationCount: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 5,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent:
+      "center",
+    backgroundColor:
+      "#E41E3F",
+  },
+
+  menuNotificationCountText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  sideMenuFooter: {
+    minHeight: 58,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderTopWidth: 1,
+  },
+
+  sideMenuFooterText: {
+    fontSize: 10,
+    flex: 1,
+  },
+
+  /* =====================================================
+     DASHBOARD
+     ===================================================== */
+
+  dashboardModal: {
+    height: "91%",
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    overflow: "hidden",
+  },
+
+  dashboardHeader: {
+    minHeight: 78,
+    paddingHorizontal: 17,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  dashboardHeaderInfo: {
+    flex: 1,
+    paddingRight: 10,
+  },
+
+  dashboardTitle: {
+    fontSize: 20,
+    fontWeight: "900",
+  },
+
+  dashboardSubtitle: {
+    fontSize: 11,
+    marginTop: 3,
+  },
+
+  dashboardContent: {
+    padding: 15,
+    paddingBottom: 30,
+  },
+
+  dashboardWelcome: {
+    minHeight: 118,
+    borderRadius: 16,
+    paddingHorizontal: 17,
+    paddingVertical: 17,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+
+  dashboardWelcomeText: {
+    flex: 1,
+    paddingRight: 12,
+  },
+
+  dashboardWelcomeTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+
+  dashboardWelcomeDescription: {
+    color: "#FFFFFF",
+    opacity: 0.9,
+    fontSize: 11,
+    lineHeight: 17,
+    marginTop: 5,
+  },
+
+  dashboardSectionTitle: {
+    fontSize: 17,
+    fontWeight: "900",
+    marginBottom: 11,
+  },
+
+  dashboardRow: {
+    justifyContent:
+      "space-between",
+  },
+
+  dashboardCard: {
+    width: "48.5%",
+    minHeight: 145,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 12,
+  },
+
+  dashboardCardIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent:
+      "center",
+  },
+
+  dashboardCardValue: {
+    fontSize: 25,
+    fontWeight: "900",
+    marginTop: 13,
+  },
+
+  dashboardCardTitle: {
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+
+  dashboardLoading: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent:
+      "center",
+  },
+
+  dashboardLoadingText: {
+    fontSize: 12,
+    marginTop: 10,
+  },
+
+  /* =====================================================
+     MODAIS
+     ===================================================== */
+
   modalContainer: {
     flex: 1,
-    justifyContent: "flex-end",
+    justifyContent:
+      "flex-end",
   },
 
   notificationsModal: {
@@ -4503,7 +6004,8 @@ const styles = StyleSheet.create({
 
   notificationsListEmpty: {
     flexGrow: 1,
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
 
   notificationItem: {
@@ -4520,7 +6022,8 @@ const styles = StyleSheet.create({
     height: 43,
     borderRadius: 22,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     marginRight: 11,
   },
 
@@ -4553,7 +6056,8 @@ const styles = StyleSheet.create({
 
   noNotifications: {
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     paddingHorizontal: 30,
   },
 
@@ -4562,7 +6066,8 @@ const styles = StyleSheet.create({
     height: 68,
     borderRadius: 34,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     marginBottom: 14,
   },
 
@@ -4584,8 +6089,13 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: 19,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
+
+  /* =====================================================
+     COMENTÁRIOS
+     ===================================================== */
 
   commentsModal: {
     height: "80%",
@@ -4625,7 +6135,8 @@ const styles = StyleSheet.create({
 
   commentsListEmpty: {
     flexGrow: 1,
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
 
   commentItem: {
@@ -4665,7 +6176,8 @@ const styles = StyleSheet.create({
   commentsLoading: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
 
   commentsLoadingText: {
@@ -4675,7 +6187,8 @@ const styles = StyleSheet.create({
 
   noComments: {
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     paddingHorizontal: 30,
   },
 
@@ -4684,7 +6197,8 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 32,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     marginBottom: 13,
   },
 
@@ -4727,6 +6241,7 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 21,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
   },
 });
