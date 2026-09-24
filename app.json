@@ -1,72 +1,84 @@
 {
-  "expo": {
-    "name": "medeasocial",
-    "slug": "medeasocial",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "medeasocial",
-    "userInterfaceStyle": "automatic",
+"expo": {
+"name": "BookNook",
+"slug": "medeasocial",
+"version": "1.0.0",
+"orientation": "portrait",
+"icon": "./assets/images/icon.png",
+"scheme": "booknook",
+"userInterfaceStyle": "automatic",
 
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.medeasocial",
-      "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
-    },
-
-    "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.medeasocial"
-    },
-
-    "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
-    },
-
-    "plugins": [
-      [
-        "expo-router",
-        {
-          "headers": {
-            "Cross-Origin-Embedder-Policy": "credentialless",
-            "Cross-Origin-Opener-Policy": "same-origin"
-          }
-        }
-      ],
-
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
-        }
-      ],
-
-      "expo-sqlite",
-      "expo-font",
-      "expo-web-browser",
-      "expo-image",
-      "expo-status-bar",
-      "expo-asset"
-    ],
-
-    "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
-    }
+"ios": {
+  "supportsTablet": true,
+  "bundleIdentifier": "com.alexojose.booknook",
+  "infoPlist": {
+    "ITSAppUsesNonExemptEncryption": false
   }
+},
+
+"android": {
+  "adaptiveIcon": {
+    "backgroundColor": "#E6F4FE",
+    "foregroundImage": "./assets/images/android-icon-foreground.png",
+    "backgroundImage": "./assets/images/android-icon-background.png",
+    "monochromeImage": "./assets/images/android-icon-monochrome.png"
+  },
+  "predictiveBackGestureEnabled": false,
+  "package": "com.alexojose.booknook"
+},
+
+"web": {
+  "output": "static",
+  "favicon": "./assets/images/favicon.png"
+},
+
+"plugins": [
+  [
+    "expo-router",
+    {
+      "headers": {
+        "Cross-Origin-Embedder-Policy": "credentialless",
+        "Cross-Origin-Opener-Policy": "same-origin"
+      }
+    }
+  ],
+  [
+    "expo-splash-screen",
+    {
+      "image": "./assets/images/splash-icon.png",
+      "imageWidth": 200,
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff",
+      "dark": {
+        "backgroundColor": "#000000"
+      }
+    }
+  ],
+  "expo-sqlite",
+  "expo-font",
+  "expo-web-browser",
+  "expo-image",
+  "expo-status-bar",
+  "expo-asset"
+],
+
+"experiments": {
+  "typedRoutes": true,
+  "reactCompiler": true
+},
+
+"extra": {
+  "router": {
+    "headers": {
+      "Cross-Origin-Embedder-Policy": "credentialless",
+      "Cross-Origin-Opener-Policy": "same-origin"
+    }
+  },
+  "eas": {
+    "projectId": "32b9348f-25a8-417c-9e97-c1a3bde2d87d"
+  }
+}
+
+
+}
 }

@@ -1,68 +1,40 @@
-import { getDb } from "@/database/db";
-import { usuarios } from "@/database/schema";
-
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { eq } from "drizzle-orm";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   KeyboardAvoidingView,
-  Modal,
   Platform,
+  Pressable,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
-  useColorScheme,
   View,
 } from "react-native";
 
-export default function Login() {
+import { useUsuario } from "@/contexts/UsuarioContext";
+import { loginUsuario } from "@/database/services/api";
+
+const BLUE = "#1877F2";
+const BLUE_DARK = "#0D65D9";
+const BACKGROUND = "#FDF6E3";
+const TEXT = "#17202A";
+const MUTED = "#6B7280";
+const BORDER = "#D8DEE6";
+const INPUT_BACKGROUND = "#FFFFFF";
+
+export default function LoginScreen() {
   const router = useRouter();
+
+  const { setUsuario } = useUsuario();
 
   const [nome, setNome] = useState("");
   const [senha, setSenha] = useState("");
-  const [loading, setLoading] = useState(false);
   const [mostrarSenha, setMostrarSenha] = useState(false);
-
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(25)).current;
-  const logoScale = useRef(new Animated.Value(0.85)).current;
-
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 650,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 650,
-        useNativeDriver: true,
-      }),
-      Animated.spring(logoScale, {
-        toValue: 1,
-        friction: 7,
-        tension: 70,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    AsyncStorage.getItem("usuarioLogado").then((user) => {
-      if (user) {
-        router.replace("/(tabs)/feed");
-      }
-    });
-  }, [fadeAnim, logoScale, router, slideAnim]);
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
     const nomeLimpo = nome.trim();
@@ -75,438 +47,308 @@ export default function Login() {
       return;
     }
 
+    if (loading) {
+      return;
+    }
+
     try {
       setLoading(true);
 
-      const database = await getDb();
 
-      const res = await database
-        .select()
-        .from(usuarios)
-        .where(eq(usuarios.nome, nomeLimpo))
-        .limit(1);
+      const resposta = await loginUsuario(nomeLimpo, senha);
 
-      const usuario = res[0];
-
-      if (!usuario) {
-        Alert.alert(
-          "Usuário não encontrado",
-          "Verifique o nome de usuário e tente novamente.",
+      if (!resposta?.success) {
+        throw new Error(
+          "Não foi possível efetuar o login.",
         );
-        return;
       }
 
-      if (usuario.senha !== senha) {
-        Alert.alert(
-          "Senha incorreta",
-          "A senha informada não corresponde à sua conta.",
+      if (!resposta?.token) {
+        throw new Error(
+          "O servidor não devolveu o token de autenticação.",
         );
-        return;
       }
+
+      if (!resposta?.user) {
+        throw new Error(
+          "O servidor não devolveu os dados do utilizador.",
+        );
+      }
+
+
+      const usuarioLogado = {
+        id: String(resposta.user.id),
+        nome: String(resposta.user.nome),
+        foto_perfil:
+          resposta.user.foto_perfil ?? null,
+        createdAt:
+          resposta.user.createdAt,
+      };
+
+
+      await AsyncStorage.setItem(
+        "authToken",
+        resposta.token,
+      );
+
 
       await AsyncStorage.setItem(
         "usuarioLogado",
         JSON.stringify({
-          id: usuario.id,
-          nome: usuario.nome,
-          foto_perfil: usuario.foto_perfil ?? null,
+          ...usuarioLogado,
+          perfilAtualizadoEm: Date.now(),
         }),
       );
 
+
+      setUsuario(usuarioLogado);
+
+   
+      const tokenGuardado =
+        await AsyncStorage.getItem("authToken");
+
+      const usuarioGuardado =
+        await AsyncStorage.getItem("usuarioLogado");
+
+      if (!tokenGuardado || !usuarioGuardado) {
+        throw new Error(
+          "O login foi realizado, mas não foi possível guardar a sessão no dispositivo.",
+        );
+      }
+
+      /**
+       * =====================================================
+       * NAVEGAR PARA O FEED
+       * =====================================================
+       */
       router.replace("/(tabs)/feed");
-    } catch (err) {
-      console.error("Erro no login:", err);
+    } catch (error) {
+      console.error("Erro no login:", error);
+
+      let mensagem =
+        "Não foi possível efetuar o login. Tente novamente.";
+
+      if (error instanceof Error) {
+        mensagem = error.message;
+      } else if (typeof error === "string" && error.trim()) {
+        mensagem = error;
+      }
 
       Alert.alert(
-        "Erro",
-        "Não foi possível efetuar o login. Tente novamente.",
+        "Não foi possível entrar",
+        mensagem,
       );
     } finally {
       setLoading(false);
     }
   };
 
-  const colors = {
-    background: isDark ? "#070B18" : "#F5F7FF",
-    backgroundSecondary: isDark ? "#0D1326" : "#EEF2FF",
+  const abrirCadastro = () => {
+    if (loading) {
+      return;
+    }
 
-    card: isDark ? "#10172A" : "#FFFFFF",
-    cardBorder: isDark ? "#1E293B" : "#E5E7EB",
-
-    title: isDark ? "#FFFFFF" : "#111827",
-    subtitle: isDark ? "#9CA8BF" : "#64748B",
-
-    label: isDark ? "#E8ECF5" : "#1E293B",
-
-    inputBackground: isDark ? "#151E33" : "#F8FAFC",
-    inputBorder: isDark ? "#293750" : "#DDE3EE",
-    inputFocus: "#405DE6",
-    inputText: isDark ? "#FFFFFF" : "#0F172A",
-    placeholder: isDark ? "#71809A" : "#94A3B8",
-
-    link: "#405DE6",
-
-    iconBackground: isDark ? "#192344" : "#EEF2FF",
-
-    buttonShadow: "rgba(64, 93, 230, 0.28)",
-
-    loadingBackground: isDark
-      ? "rgba(2, 6, 23, 0.82)"
-      : "rgba(15, 23, 42, 0.48)",
+    router.push("/register");
   };
 
   return (
     <KeyboardAvoidingView
-      style={[
-        styles.container,
-        {
-          backgroundColor: colors.background,
-        },
-      ]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      style={styles.container}
+      behavior={
+        Platform.OS === "ios"
+          ? "padding"
+          : undefined
+      }
     >
-      <StatusBar
-        barStyle={isDark ? "light-content" : "dark-content"}
-        backgroundColor={colors.background}
-      />
-
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View
-          pointerEvents="none"
-          style={[
-            styles.backgroundGlow,
-            {
-              backgroundColor: isDark
-                ? "rgba(64, 93, 230, 0.13)"
-                : "rgba(64, 93, 230, 0.08)",
-            },
-          ]}
-        />
-
-        <Animated.View
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
-          <Animated.View
-            style={[
-              styles.logoWrapper,
-              {
-                transform: [{ scale: logoScale }],
-              },
-            ]}
-          >
+        <View style={styles.content}>
+          {/* =================================================
+              LOGO / CABEÇALHO
+              ================================================= */}
+          <View style={styles.header}>
             <View style={styles.logoCircle}>
-              <Text style={styles.logoText}>B</Text>
+              <MaterialCommunityIcons
+                name="book-open-page-variant"
+                size={42}
+                color="#FFFFFF"
+              />
             </View>
 
-            <View style={styles.logoDot} />
-          </Animated.View>
-
-          <View style={styles.header}>
-            <Text
-              style={[
-                styles.title,
-                {
-                  color: colors.title,
-                },
-              ]}
-            >
-              Bem-vindo ao BookNook
+            <Text style={styles.title}>
+              BookNook
             </Text>
 
-            <Text
-              style={[
-                styles.subtitle,
-                {
-                  color: colors.subtitle,
-                },
-              ]}
-            >
-              Entre na sua conta e continue a descobrir, ler e partilhar
-              histórias.
+            <Text style={styles.subtitle}>
+              A tua rede social para leitores
             </Text>
           </View>
 
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.cardBorder,
-              },
-            ]}
-          >
-            <View style={styles.form}>
-              <View style={styles.field}>
-                <Text
-                  style={[
-                    styles.label,
-                    {
-                      color: colors.label,
-                    },
-                  ]}
-                >
-                  Nome de usuário
-                </Text>
+          {/* =================================================
+              FORMULÁRIO
+              ================================================= */}
+          <View style={styles.form}>
+            <Text style={styles.formTitle}>
+              Bem-vindo de volta!
+            </Text>
 
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    {
-                      backgroundColor: colors.inputBackground,
-                      borderColor: colors.inputBorder,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.inputIcon,
-                      {
-                        backgroundColor: colors.iconBackground,
-                      },
-                    ]}
-                  >
-                    <Text style={styles.inputIconText}>@</Text>
-                  </View>
+            <Text style={styles.formSubtitle}>
+              Entre na sua conta para continuar.
+            </Text>
 
-                  <TextInput
-                    placeholder="Seu nome de usuário"
-                    placeholderTextColor={colors.placeholder}
-                    style={[
-                      styles.input,
-                      {
-                        color: colors.inputText,
-                      },
-                    ]}
-                    value={nome}
-                    onChangeText={setNome}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    autoComplete="username"
-                    editable={!loading}
-                    returnKeyType="next"
-                  />
-                </View>
+            {/* Nome */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>
+                Nome de usuário
+              </Text>
+
+              <View style={styles.inputWrapper}>
+                <MaterialCommunityIcons
+                  name="account-outline"
+                  size={22}
+                  color={MUTED}
+                  style={styles.inputIcon}
+                />
+
+                <TextInput
+                  value={nome}
+                  onChangeText={setNome}
+                  placeholder="Digite o seu nome de usuário"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!loading}
+                  returnKeyType="next"
+                  style={styles.input}
+                />
               </View>
-
-              <View style={styles.field}>
-                <Text
-                  style={[
-                    styles.label,
-                    {
-                      color: colors.label,
-                    },
-                  ]}
-                >
-                  Senha
-                </Text>
-
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    {
-                      backgroundColor: colors.inputBackground,
-                      borderColor: colors.inputBorder,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.inputIcon,
-                      {
-                        backgroundColor: colors.iconBackground,
-                      },
-                    ]}
-                  >
-                    <Text style={styles.inputIconText}>•</Text>
-                  </View>
-
-                  <TextInput
-                    placeholder="Sua senha"
-                    placeholderTextColor={colors.placeholder}
-                    style={[
-                      styles.input,
-                      {
-                        color: colors.inputText,
-                      },
-                    ]}
-                    secureTextEntry={!mostrarSenha}
-                    value={senha}
-                    onChangeText={setSenha}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    autoComplete="password"
-                    editable={!loading}
-                    returnKeyType="done"
-                    onSubmitEditing={handleLogin}
-                  />
-
-                  <TouchableOpacity
-                    style={styles.showPassword}
-                    onPress={() => setMostrarSenha((value) => !value)}
-                    disabled={loading}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.showPasswordText,
-                        {
-                          color: colors.subtitle,
-                        },
-                      ]}
-                    >
-                      {mostrarSenha ? "Ocultar" : "Mostrar"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.button,
-                  loading && styles.buttonDisabled,
-                ]}
-                onPress={handleLogin}
-                activeOpacity={0.88}
-                disabled={loading}
-              >
-                <Text style={styles.buttonText}>Entrar</Text>
-
-                <View style={styles.buttonArrow}>
-                  <Text style={styles.buttonArrowText}>→</Text>
-                </View>
-              </TouchableOpacity>
             </View>
 
-            <View
-              style={[
-                styles.divider,
-                {
-                  backgroundColor: colors.cardBorder,
-                },
-              ]}
-            />
+            {/* Senha */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>
+                Senha
+              </Text>
 
-            <View style={styles.footer}>
-              <Text
-                style={[
-                  styles.footerText,
-                  {
-                    color: colors.subtitle,
-                  },
-                ]}
-              >
+              <View style={styles.inputWrapper}>
+                <MaterialCommunityIcons
+                  name="lock-outline"
+                  size={22}
+                  color={MUTED}
+                  style={styles.inputIcon}
+                />
+
+                <TextInput
+                  value={senha}
+                  onChangeText={setSenha}
+                  placeholder="Digite a sua senha"
+                  placeholderTextColor="#9CA3AF"
+                  secureTextEntry={!mostrarSenha}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!loading}
+                  returnKeyType="done"
+                  onSubmitEditing={handleLogin}
+                  style={styles.input}
+                />
+
+                <Pressable
+                  onPress={() =>
+                    setMostrarSenha(
+                      (valor) => !valor,
+                    )
+                  }
+                  disabled={loading}
+                  hitSlop={10}
+                  style={styles.eyeButton}
+                >
+                  <MaterialCommunityIcons
+                    name={
+                      mostrarSenha
+                        ? "eye-off-outline"
+                        : "eye-outline"
+                    }
+                    size={22}
+                    color={MUTED}
+                  />
+                </Pressable>
+              </View>
+            </View>
+
+            {/* =================================================
+                BOTÃO ENTRAR
+                ================================================= */}
+            <Pressable
+              onPress={handleLogin}
+              disabled={loading}
+              style={({ pressed }) => [
+                styles.loginButton,
+                pressed &&
+                !loading &&
+                styles.loginButtonPressed,
+                loading &&
+                styles.loginButtonDisabled,
+              ]}
+            >
+              {loading ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#FFFFFF"
+                />
+              ) : (
+                <>
+                  <Text style={styles.loginButtonText}>
+                    Entrar
+                  </Text>
+
+                  <MaterialCommunityIcons
+                    name="arrow-right"
+                    size={22}
+                    color="#FFFFFF"
+                  />
+                </>
+              )}
+            </Pressable>
+
+            {/* =================================================
+                CADASTRO
+                ================================================= */}
+            <View style={styles.registerContainer}>
+              <Text style={styles.registerText}>
                 Ainda não tens uma conta?
               </Text>
 
-              <TouchableOpacity
-                onPress={() => router.push("/register")}
-                activeOpacity={0.7}
+              <Pressable
+                onPress={abrirCadastro}
                 disabled={loading}
+                hitSlop={8}
               >
-                <Text
-                  style={[
-                    styles.link,
-                    {
-                      color: colors.link,
-                    },
-                  ]}
-                >
+                <Text style={styles.registerLink}>
                   Criar conta
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
 
-          <View style={styles.bottomMessage}>
-            <View
-              style={[
-                styles.bottomDot,
-                {
-                  backgroundColor: "#405DE6",
-                },
-              ]}
+          {/* =================================================
+              RODAPÉ
+              ================================================= */}
+          <View style={styles.footer}>
+            <MaterialCommunityIcons
+              name="book-open-variant"
+              size={18}
+              color={MUTED}
             />
 
-            <Text
-              style={[
-                styles.bottomText,
-                {
-                  color: colors.subtitle,
-                },
-              ]}
-            >
-              O teu espaço para descobrir novas histórias
+            <Text style={styles.footerText}>
+              Lê. Partilha. Descobre.
             </Text>
           </View>
-        </Animated.View>
+        </View>
       </ScrollView>
-
-      {loading && (
-        <Modal
-          transparent
-          visible={loading}
-          animationType="fade"
-          statusBarTranslucent
-        >
-          <View
-            style={[
-              styles.loadingOverlay,
-              {
-                backgroundColor: colors.loadingBackground,
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.loadingCard,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.cardBorder,
-                },
-              ]}
-            >
-              <View style={styles.loadingIcon}>
-                <ActivityIndicator
-                  size="large"
-                  color="#405DE6"
-                />
-              </View>
-
-              <Text
-                style={[
-                  styles.loadingText,
-                  {
-                    color: colors.title,
-                  },
-                ]}
-              >
-                A entrar...
-              </Text>
-
-              <Text
-                style={[
-                  styles.loadingSubtext,
-                  {
-                    color: colors.subtitle,
-                  },
-                ]}
-              >
-                A preparar o teu espaço
-              </Text>
-            </View>
-          </View>
-        </Modal>
-      )}
     </KeyboardAvoidingView>
   );
 }
@@ -514,310 +356,186 @@ export default function Login() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: BACKGROUND,
   },
 
-  scroll: {
+  scrollContent: {
     flexGrow: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 22,
-    paddingVertical: 36,
-  },
-
-  backgroundGlow: {
-    position: "absolute",
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    top: -110,
-    right: -110,
   },
 
   content: {
+    flexGrow: 1,
     width: "100%",
-    maxWidth: 470,
-    alignItems: "center",
-  },
-
-  logoWrapper: {
-    position: "relative",
-    marginBottom: 20,
-  },
-
-  logoCircle: {
-    width: 78,
-    height: 78,
-    borderRadius: 24,
-    backgroundColor: "#405DE6",
-    alignItems: "center",
-    justifyContent: "center",
-
-    shadowColor: "#405DE6",
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    shadowOpacity: 0.28,
-    shadowRadius: 18,
-    elevation: 10,
-  },
-
-  logoText: {
-    color: "#FFFFFF",
-    fontSize: 38,
-    fontWeight: "900",
-    letterSpacing: -2,
-  },
-
-  logoDot: {
-    position: "absolute",
-    width: 13,
-    height: 13,
-    borderRadius: 7,
-    backgroundColor: "#FFFFFF",
-    right: -4,
-    bottom: -3,
-    borderWidth: 3,
-    borderColor: "#405DE6",
+    maxWidth: 520,
+    alignSelf: "center",
+    paddingHorizontal: 24,
+    paddingTop: 48,
+    paddingBottom: 30,
   },
 
   header: {
     alignItems: "center",
-    marginBottom: 28,
-    paddingHorizontal: 10,
+    marginBottom: 34,
+  },
+
+  logoCircle: {
+    width: 82,
+    height: 82,
+    borderRadius: 26,
+    backgroundColor: BLUE,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+    elevation: 5,
+    shadowColor: BLUE,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
   },
 
   title: {
-    fontSize: 30,
-    lineHeight: 36,
-    fontWeight: "900",
-    letterSpacing: -0.7,
-    textAlign: "center",
-    marginBottom: 9,
+    fontSize: 32,
+    fontWeight: "800",
+    color: TEXT,
+    letterSpacing: -0.8,
   },
 
   subtitle: {
+    marginTop: 7,
     fontSize: 15,
-    lineHeight: 22,
+    color: MUTED,
     textAlign: "center",
-    maxWidth: 390,
-  },
-
-  card: {
-    width: "100%",
-    borderRadius: 26,
-    borderWidth: 1,
-    padding: 22,
-
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: 12,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 25,
-    elevation: 7,
   },
 
   form: {
     width: "100%",
   },
 
-  field: {
-    width: "100%",
-    marginBottom: 19,
+  formTitle: {
+    fontSize: 25,
+    fontWeight: "800",
+    color: TEXT,
+    marginBottom: 7,
+  },
+
+  formSubtitle: {
+    fontSize: 14,
+    color: MUTED,
+    marginBottom: 25,
+  },
+
+  inputGroup: {
+    marginBottom: 18,
   },
 
   label: {
-    fontSize: 13,
-    fontWeight: "800",
+    fontSize: 14,
+    fontWeight: "700",
+    color: TEXT,
     marginBottom: 8,
-    marginLeft: 2,
-    letterSpacing: 0.1,
   },
 
   inputWrapper: {
-    width: "100%",
-    minHeight: 58,
-    borderRadius: 16,
-    borderWidth: 1,
+    minHeight: 54,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 9,
+    backgroundColor: INPUT_BACKGROUND,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 15,
   },
 
   inputIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 9,
-  },
-
-  inputIconText: {
-    color: "#405DE6",
-    fontSize: 18,
-    fontWeight: "900",
+    marginLeft: 15,
   },
 
   input: {
     flex: 1,
+    minHeight: 52,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: TEXT,
+  },
+
+  eyeButton: {
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+  },
+
+  loginButton: {
     minHeight: 56,
-    paddingHorizontal: 4,
+    borderRadius: 16,
+    backgroundColor: BLUE,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 9,
+    marginTop: 7,
+    elevation: 3,
+    shadowColor: BLUE,
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+  },
+
+  loginButtonPressed: {
+    backgroundColor: BLUE_DARK,
+    transform: [
+      {
+        scale: 0.99,
+      },
+    ],
+  },
+
+  loginButtonDisabled: {
+    opacity: 0.7,
+  },
+
+  loginButtonText: {
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "500",
-  },
-
-  showPassword: {
-    paddingHorizontal: 7,
-    paddingVertical: 10,
-  },
-
-  showPasswordText: {
-    fontSize: 12,
     fontWeight: "800",
   },
 
-  button: {
-    width: "100%",
-    minHeight: 58,
-    borderRadius: 16,
-    backgroundColor: "#405DE6",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 3,
-
-    shadowColor: "#405DE6",
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.28,
-    shadowRadius: 14,
-    elevation: 6,
-  },
-
-  buttonDisabled: {
-    opacity: 0.62,
-  },
-
-  buttonText: {
-    color: "#FFFFFF",
-    fontWeight: "900",
-    fontSize: 16,
-    letterSpacing: 0.2,
-  },
-
-  buttonArrow: {
-    position: "absolute",
-    right: 15,
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  buttonArrowText: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "700",
-    marginTop: -2,
-  },
-
-  divider: {
-    height: 1,
-    width: "100%",
-    marginTop: 22,
-    marginBottom: 18,
-  },
-
-  footer: {
+  registerContainer: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     flexWrap: "wrap",
+    marginTop: 24,
+    gap: 5,
+  },
+
+  registerText: {
+    fontSize: 14,
+    color: MUTED,
+  },
+
+  registerLink: {
+    fontSize: 14,
+    color: BLUE,
+    fontWeight: "800",
+  },
+
+  footer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    marginTop: "auto",
+    paddingTop: 40,
   },
 
   footerText: {
     fontSize: 13,
-    lineHeight: 20,
-    marginRight: 5,
-  },
-
-  link: {
-    fontSize: 13,
-    lineHeight: 20,
-    fontWeight: "900",
-  },
-
-  bottomMessage: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 23,
-    paddingHorizontal: 10,
-  },
-
-  bottomDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 8,
-  },
-
-  bottomText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-
-  loadingOverlay: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-
-  loadingCard: {
-    width: "84%",
-    maxWidth: 320,
-    borderRadius: 25,
-    borderWidth: 1,
-    paddingVertical: 30,
-    paddingHorizontal: 24,
-    alignItems: "center",
-
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 25,
-    elevation: 10,
-  },
-
-  loadingIcon: {
-    width: 58,
-    height: 58,
-    borderRadius: 18,
-    backgroundColor: "rgba(64, 93, 230, 0.10)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  loadingText: {
-    marginTop: 16,
-    fontSize: 17,
-    fontWeight: "900",
-  },
-
-  loadingSubtext: {
-    marginTop: 6,
-    fontSize: 13,
-    textAlign: "center",
+    color: MUTED,
   },
 });
+
