@@ -1,1423 +1,2102 @@
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { eq } from "drizzle-orm";
-import * as ImagePicker from "expo-image-picker";
-import { useFocusEffect, useRouter } from "expo-router";
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+
+
+
 import {
   ActivityIndicator,
   Alert,
+  AppState,
+  AppStateStatus,
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   RefreshControl,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  useColorScheme
+  useColorScheme,
 } from "react-native";
+
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { getDb } from "@/database/db";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { eq, inArray } from "drizzle-orm";
+
+import * as ImagePicker from "expo-image-picker";
+
 import {
+  MaterialCommunityIcons,
+} from "@expo/vector-icons";
+
+import {
+  useFocusEffect,
+  useRouter,
+} from "expo-router";
+
+import { useUsuario } from "@/contexts/UsuarioContext";
+
+import { db } from "@/database/db";
+
+import {
+  criticas,
   estantes,
+  feed,
   livros,
-  usuarios
+  usuarios,
 } from "@/database/schema";
 
 import {
   criarComentario,
   listarComentarios,
-  listarFeed,
   obterEstatisticasCritica,
   toggleCurtida,
+  type Comentario,
 } from "@/database/services/socialService";
 
-const FACEBOOK_BLUE = "#1877F2";
+
 
 type Usuario = {
   id: string;
   nome: string;
-  foto_perfil: string | null;
+  foto_perfil?: string | null;
 };
 
-type Livro = {
+type Publicacao = {
+  id: string | number;
+  tipo?: string | null;
+  texto?: string | null;
+  titulo?: string | null;
+  autor?: string | null;
+  imagem?: string | null;
+  criado_em?: string | number | Date | null;
+  livroId?: string | null;
+  criticaId?: string | number | null;
+  curtidas?: number;
+  comentarios?: number;
+  curtiu?: boolean;
+};
+
+type LivroLido = {
   id: string;
-  titulo: string;
-  autor: string | null;
-  imagem: string | null;
+  titulo?: string | null;
+  autor?: string | null;
+  imagem?: string | null;
 };
 
-type LivroEstante = {
-  id?: string | number;
-  livro_id: string;
-  usuario_id: string;
-  status: string;
-  livro: Livro | null;
-};
+type AbaPerfil = "publicacoes" | "lidos";
 
-type Estatisticas = {
+type EstatisticaPublicacao = {
   curtidas: number;
   comentarios: number;
   curtiu: boolean;
 };
 
-type Publicacao = {
-  id: number;
-  usuario_id: string;
-  tipo: string;
-  livro_id: string | null;
-  critica_id: number | null;
-  createdAt: string;
-  usuario?: {
-    id: string;
-    nome: string;
-    foto_perfil: string | null;
-  } | null;
-  livro?: {
-    id: string;
-    titulo: string;
-    autor: string | null;
-    imagem: string | null;
-  } | null;
-};
 
-type Comentario = {
-  id: number;
-  usuario_id: string;
-  critica_id: number;
-  texto: string;
-  createdAt: string;
-  usuario?: {
-    id: string;
-    nome: string;
-    foto_perfil: string | null;
-  } | null;
-};
 
-export default function Perfil() {
-  const router = useRouter();
-  const systemScheme = useColorScheme();
+function normalizarTexto(valor: unknown): string {
+  return String(valor ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 
-  const isDark = systemScheme === "dark";
-
-  const theme = useMemo(
-    () => ({
-      background: isDark ? "#0F1115" : "#F0F2F5",
-      surface: isDark ? "#181A1F" : "#FFFFFF",
-      surfaceSecondary: isDark ? "#20232A" : "#F7F8FA",
-      border: isDark ? "#30343B" : "#E4E6EB",
-      text: isDark ? "#F5F6F7" : "#1C1E21",
-      textSecondary: isDark ? "#B7BBC2" : "#65676B",
-      muted: isDark ? "#8D929A" : "#8A8D91",
-      input: isDark ? "#24272E" : "#F0F2F5",
-      overlay: isDark ? "rgba(0,0,0,0.75)" : "rgba(0,0,0,0.45)",
-      blue: FACEBOOK_BLUE,
-      blueSoft: isDark ? "#172A44" : "#E7F3FF",
-      danger: "#E53935",
-    }),
-    [isDark]
-  );
-
-  const [usuario, setUsuario] = useState<Usuario | null>(null);
-  const [livrosLidos, setLivrosLidos] = useState<LivroEstante[]>([]);
-  const [publicacoes, setPublicacoes] = useState<Publicacao[]>([]);
-  const [estatisticas, setEstatisticas] = useState<
-    Record<number, Estatisticas>
-  >({});
-
-  const [carregando, setCarregando] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const [modalEditar, setModalEditar] = useState(false);
-  const [modalComentarios, setModalComentarios] = useState(false);
-
-  const [nomeEditado, setNomeEditado] = useState("");
-  const [fotoEditada, setFotoEditada] = useState<string | null>(null);
-
-  const [criticaSelecionada, setCriticaSelecionada] = useState<number | null>(
-    null
-  );
-
-  const [comentarios, setComentarios] = useState<Comentario[]>([]);
-  const [novoComentario, setNovoComentario] = useState("");
-  const [carregandoComentarios, setCarregandoComentarios] = useState(false);
-  const [enviandoComentario, setEnviandoComentario] = useState(false);
-
-  const [aba, setAba] = useState<"publicacoes" | "livros">("publicacoes");
-
-  const carregarPerfil = useCallback(async () => {
-    try {
-      const sessao = await AsyncStorage.getItem("usuarioLogado");
-
-      if (!sessao) {
-        router.replace("/login");
-        return;
-      }
-
-      let dadosSessao: any = null;
-
-      try {
-        dadosSessao = JSON.parse(sessao);
-      } catch {
-        dadosSessao = null;
-      }
-
-      const usuarioId =
-        typeof dadosSessao === "string"
-          ? dadosSessao
-          : dadosSessao?.id ??
-          dadosSessao?.usuario_id ??
-          dadosSessao?.userId ??
-          dadosSessao?.usuarioId ??
-          null;
-
-      if (!usuarioId) {
-        router.replace("/login");
-        return;
-      }
-
-      const database = await getDb();
-
-      const resultadoUsuario = await database
-        .select()
-        .from(usuarios)
-        .where(eq(usuarios.id, String(usuarioId)))
-        .limit(1);
-
-      const usuarioAtual = resultadoUsuario[0];
-
-      if (!usuarioAtual) {
-        router.replace("/login");
-        return;
-      }
-
-      const usuarioFormatado: Usuario = {
-        id: String(usuarioAtual.id),
-        nome: usuarioAtual.nome ?? "Utilizador",
-        foto_perfil: usuarioAtual.foto_perfil ?? null,
-      };
-
-      setUsuario(usuarioFormatado);
-      setNomeEditado(usuarioFormatado.nome);
-      setFotoEditada(usuarioFormatado.foto_perfil);
-
-      /*
-       * Livros marcados como lidos pelo utilizador.
-       */
-      const resultadoLivros = await database
-        .select({
-          id: estantes.id,
-          livro_id: estantes.livro_id,
-          usuario_id: estantes.usuario_id,
-          status: estantes.status,
-          livro: livros,
-        })
-        .from(estantes)
-        .leftJoin(livros, eq(estantes.livro_id, livros.id))
-        .where(eq(estantes.usuario_id, String(usuarioId)));
-
-      const somenteLidos: LivroEstante[] = resultadoLivros
-        .filter((item) => item.status === "lido")
-        .map((item) => ({
-          id: item.id as string | number | undefined,
-          livro_id: String(item.livro_id),
-          usuario_id: String(item.usuario_id),
-          status: String(item.status),
-          livro: item.livro
-            ? {
-              id: String(item.livro.id),
-              titulo: item.livro.titulo,
-              autor: item.livro.autor ?? null,
-              imagem: item.livro.imagem ?? null,
-            }
-            : null,
-        }));
-
-      setLivrosLidos(somenteLidos);
-
-      /*
-       * Carrega o feed e mostra apenas publicações
-       * relacionadas ao próprio perfil.
-       */
-      const feed = await listarFeed();
-
-      const minhasPublicacoes = feed.filter(
-        (item) => String(item.usuario_id) === String(usuarioId)
-      ) as Publicacao[];
-
-      setPublicacoes(minhasPublicacoes);
-
-      /*
-       * Estatísticas de cada crítica.
-       */
-      const novasEstatisticas: Record<number, Estatisticas> = {};
-
-      for (const publicacao of minhasPublicacoes) {
-        if (publicacao.critica_id != null) {
-          try {
-            novasEstatisticas[publicacao.critica_id] =
-              await obterEstatisticasCritica(
-                publicacao.critica_id,
-                String(usuarioId)
-              );
-          } catch (erro) {
-            console.log(
-              "Erro ao carregar estatísticas:",
-              erro
-            );
-          }
-        }
-      }
-
-      setEstatisticas(novasEstatisticas);
-    } catch (erro) {
-      console.error("Erro ao carregar perfil:", erro);
-
-      Alert.alert(
-        "Erro",
-        "Não foi possível carregar os dados do perfil."
-      );
-    } finally {
-      setCarregando(false);
-      setRefreshing(false);
-    }
-  }, [router]);
-
-  useFocusEffect(
-    useCallback(() => {
-      carregarPerfil();
-    }, [carregarPerfil])
-  );
-
-  useEffect(() => {
-    StatusBar.setBarStyle(
-      isDark ? "light-content" : "dark-content"
-    );
-  }, [isDark]);
-
-  const atualizar = useCallback(async () => {
-    setRefreshing(true);
-    await carregarPerfil();
-  }, [carregarPerfil]);
-
-  const abrirEdicao = () => {
-    if (!usuario) return;
-
-    setNomeEditado(usuario.nome);
-    setFotoEditada(usuario.foto_perfil);
-    setModalEditar(true);
-  };
-
-  const escolherFoto = async () => {
-    try {
-      const permissao =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (!permissao.granted) {
-        Alert.alert(
-          "Permissão necessária",
-          "É necessário permitir o acesso às fotografias para escolher uma foto de perfil."
-        );
-        return;
-      }
-
-      const resultado =
-        await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ["images"],
-          allowsEditing: true,
-          aspect: [1, 1],
-          quality: 0.85,
-        });
-
-      if (resultado.canceled) {
-        return;
-      }
-
-      const uri = resultado.assets?.[0]?.uri;
-
-      if (uri) {
-        setFotoEditada(uri);
-      }
-    } catch (erro) {
-      console.error("Erro ao escolher foto:", erro);
-
-      Alert.alert(
-        "Erro",
-        "Não foi possível selecionar a fotografia."
-      );
-    }
-  };
-
-  const salvarPerfil = async () => {
-    if (!usuario) return;
-
-    const nome = nomeEditado.trim();
-
-    if (!nome) {
-      Alert.alert(
-        "Nome obrigatório",
-        "Digite um nome para o perfil."
-      );
-      return;
-    }
-
-    try {
-      const database = await getDb();
-
-      await database
-        .update(usuarios)
-        .set({
-          nome,
-          foto_perfil: fotoEditada ?? "",
-        })
-        .where(eq(usuarios.id, usuario.id));
-
-      const usuarioAtualizado: Usuario = {
-        ...usuario,
-        nome,
-        foto_perfil: fotoEditada,
-      };
-
-      setUsuario(usuarioAtualizado);
-
-      /*
-       * Mantém a sessão sincronizada.
-       */
-      const sessao = await AsyncStorage.getItem("usuarioLogado");
-
-      if (sessao) {
-        try {
-          const dadosSessao = JSON.parse(sessao);
-
-          const novaSessao =
-            typeof dadosSessao === "object" && dadosSessao !== null
-              ? {
-                ...dadosSessao,
-                nome,
-                foto_perfil: fotoEditada,
-              }
-              : dadosSessao;
-
-          await AsyncStorage.setItem(
-            "usuarioLogado",
-            JSON.stringify(novaSessao)
-          );
-        } catch {
-          // A sessão continua válida mesmo se não puder ser atualizada.
-        }
-      }
-
-      setModalEditar(false);
-
-      Alert.alert(
-        "Perfil atualizado",
-        "As informações do teu perfil foram atualizadas com sucesso."
-      );
-    } catch (erro) {
-      console.error("Erro ao salvar perfil:", erro);
-
-      Alert.alert(
-        "Erro",
-        "Não foi possível atualizar o perfil."
-      );
-    }
-  };
-
-  const fazerLogout = async () => {
-    try {
-      await AsyncStorage.removeItem("usuarioLogado");
-
-      router.replace("/login");
-    } catch (erro) {
-      console.error("Erro ao terminar sessão:", erro);
-    }
-  };
-
-  const confirmarLogout = () => {
-    Alert.alert(
-      "Terminar sessão",
-      "Tens a certeza que queres terminar a sessão?",
-      [
-        {
-          text: "Cancelar",
-          style: "cancel",
-        },
-        {
-          text: "Sair",
-          style: "destructive",
-          onPress: fazerLogout,
-        },
-      ]
-    );
-  };
-
-  const abrirComentarios = async (criticaId: number) => {
-    setCriticaSelecionada(criticaId);
-    setModalComentarios(true);
-    setCarregandoComentarios(true);
-
-    try {
-      const resultado = await listarComentarios(criticaId);
-
-      setComentarios(resultado as Comentario[]);
-    } catch (erro) {
-      console.error(
-        "Erro ao carregar comentários:",
-        erro
-      );
-
-      setComentarios([]);
-
-      Alert.alert(
-        "Erro",
-        "Não foi possível carregar os comentários."
-      );
-    } finally {
-      setCarregandoComentarios(false);
-    }
-  };
-
-  const enviarComentario = async () => {
-    if (
-      !usuario ||
-      criticaSelecionada == null ||
-      !novoComentario.trim()
-    ) {
-      return;
-    }
-
-    try {
-      setEnviandoComentario(true);
-
-      const comentario = await criarComentario(
-        usuario.id,
-        criticaSelecionada,
-        novoComentario.trim()
-      );
-
-      setComentarios((atual) => [
-        ...atual,
-        comentario as Comentario,
-      ]);
-
-      setNovoComentario("");
-
-      setEstatisticas((atual) => ({
-        ...atual,
-        [criticaSelecionada]: {
-          ...(atual[criticaSelecionada] ?? {
-            curtidas: 0,
-            comentarios: 0,
-            curtiu: false,
-          }),
-          comentarios:
-            (atual[criticaSelecionada]?.comentarios ?? 0) + 1,
-        },
-      }));
-    } catch (erro) {
-      console.error(
-        "Erro ao enviar comentário:",
-        erro
-      );
-
-      Alert.alert(
-        "Erro",
-        "Não foi possível publicar o comentário."
-      );
-    } finally {
-      setEnviandoComentario(false);
-    }
-  };
-
-  const curtirPublicacao = async (
-    criticaId: number
-  ) => {
-    if (!usuario) return;
-
-    try {
-      const novaCurtida = await toggleCurtida(
-        usuario.id,
-        criticaId
-      );
-
-      setEstatisticas((atual) => {
-        const anterior = atual[criticaId] ?? {
-          curtidas: 0,
-          comentarios: 0,
-          curtiu: false,
-        };
-
-        return {
-          ...atual,
-          [criticaId]: {
-            ...anterior,
-            curtiu: novaCurtida,
-            curtidas: Math.max(
-              0,
-              anterior.curtidas +
-              (novaCurtida ? 1 : -1)
-            ),
-          },
-        };
-      });
-    } catch (erro) {
-      console.error(
-        "Erro ao alterar curtida:",
-        erro
-      );
-
-      Alert.alert(
-        "Erro",
-        "Não foi possível atualizar a curtida."
-      );
-    }
-  };
-
-  const formatarData = (data: string) => {
-    try {
-      const dataAtual = new Date(data);
-
-      return dataAtual.toLocaleDateString("pt-PT", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-    } catch {
-      return "";
-    }
-  };
-
-  const inicialNome = useMemo(() => {
-    if (!usuario?.nome) return "?";
-
-    return usuario.nome
-      .trim()
-      .charAt(0)
-      .toUpperCase();
-  }, [usuario?.nome]);
-
-  const renderAvatar = (
-    tamanho: number = 92,
-    uri?: string | null
-  ) => {
-    if (uri) {
-      return (
-        <Image
-          source={{ uri }}
-          style={{
-            width: tamanho,
-            height: tamanho,
-            borderRadius: tamanho / 2,
-          }}
-        />
-      );
-    }
-
-    return (
-      <View
-        style={[
-          styles.avatarPlaceholder,
-          {
-            width: tamanho,
-            height: tamanho,
-            borderRadius: tamanho / 2,
-            backgroundColor: theme.blue,
-          },
-        ]}
-      >
-        <Text
-          style={[
-            styles.avatarInitial,
-            {
-              fontSize: tamanho * 0.4,
-            },
-          ]}
-        >
-          {inicialNome}
-        </Text>
-      </View>
-    );
-  };
-
-  const publicacoesVisiveis = publicacoes.filter(
-    (item) =>
-      item.tipo !== "curtida" &&
-      (item.livro != null || item.critica_id != null)
-  );
-
-  const renderPublicacao = ({
-    item,
-  }: {
-    item: Publicacao;
-  }) => {
-    const criticaId = item.critica_id;
-
-    const stats =
-      criticaId != null
-        ? estatisticas[criticaId] ?? {
-          curtidas: 0,
-          comentarios: 0,
-          curtiu: false,
-        }
-        : null;
-
-    return (
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: theme.surface,
-            borderColor: theme.border,
-          },
-        ]}
-      >
-        <View style={styles.postHeader}>
-          {renderAvatar(
-            46,
-            item.usuario?.foto_perfil ?? usuario?.foto_perfil
-          )}
-
-          <View style={styles.postHeaderInfo}>
-            <Text
-              style={[
-                styles.postUserName,
-                { color: theme.text },
-              ]}
-              numberOfLines={1}
-            >
-              {item.usuario?.nome ?? usuario?.nome}
-            </Text>
-
-            <Text
-              style={[
-                styles.postDate,
-                { color: theme.textSecondary },
-              ]}
-            >
-              {formatarData(item.createdAt)}
-            </Text>
-          </View>
-
-          <MaterialCommunityIcons
-            name="dots-horizontal"
-            size={22}
-            color={theme.textSecondary}
-          />
-        </View>
-
-        {item.livro && (
-          <View
-            style={[
-              styles.bookPost,
-              {
-                backgroundColor:
-                  theme.surfaceSecondary,
-                borderColor: theme.border,
-              },
-            ]}
-          >
-            {item.livro.imagem ? (
-              <Image
-                source={{
-                  uri: item.livro.imagem,
-                }}
-                style={styles.bookCover}
-              />
-            ) : (
-              <View
-                style={[
-                  styles.bookCoverPlaceholder,
-                  {
-                    backgroundColor: theme.blueSoft,
-                  },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="book-open-page-variant"
-                  size={32}
-                  color={theme.blue}
-                />
-              </View>
-            )}
-
-            <View style={styles.bookPostInfo}>
-              <Text
-                style={[
-                  styles.bookPostLabel,
-                  { color: theme.blue },
-                ]}
-              >
-                LIVRO LIDO
-              </Text>
-
-              <Text
-                style={[
-                  styles.bookPostTitle,
-                  { color: theme.text },
-                ]}
-                numberOfLines={2}
-              >
-                {item.livro.titulo}
-              </Text>
-
-              {item.livro.autor && (
-                <Text
-                  style={[
-                    styles.bookPostAuthor,
-                    {
-                      color:
-                        theme.textSecondary,
-                    },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {item.livro.autor}
-                </Text>
-              )}
-            </View>
-          </View>
-        )}
-
-        {criticaId != null && (
-          <>
-            <View
-              style={[
-                styles.reviewBox,
-                {
-                  backgroundColor:
-                    theme.surfaceSecondary,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="format-quote-open"
-                size={24}
-                color={theme.blue}
-              />
-
-              <Text
-                style={[
-                  styles.reviewText,
-                  { color: theme.text },
-                ]}
-              >
-                A tua crítica está disponível na publicação.
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.postStats,
-                {
-                  borderBottomColor:
-                    theme.border,
-                },
-              ]}
-            >
-              <View style={styles.likeCount}>
-                {stats && stats.curtidas > 0 && (
-                  <>
-                    <View
-                      style={[
-                        styles.likeCircle,
-                        {
-                          backgroundColor:
-                            theme.blue,
-                        },
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        name="thumb-up"
-                        size={11}
-                        color="#FFFFFF"
-                      />
-                    </View>
-
-                    <Text
-                      style={[
-                        styles.statText,
-                        {
-                          color:
-                            theme.textSecondary,
-                        },
-                      ]}
-                    >
-                      {stats.curtidas}
-                    </Text>
-                  </>
-                )}
-              </View>
-
-              <TouchableOpacity
-                onPress={() =>
-                  abrirComentarios(criticaId)
-                }
-              >
-                <Text
-                  style={[
-                    styles.statText,
-                    {
-                      color:
-                        theme.textSecondary,
-                    },
-                  ]}
-                >
-                  {stats?.comentarios ?? 0}{" "}
-                  {stats?.comentarios === 1
-                    ? "comentário"
-                    : "comentários"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.postActions}>
-              <TouchableOpacity
-                style={styles.postAction}
-                onPress={() =>
-                  curtirPublicacao(criticaId)
-                }
-              >
-                <MaterialCommunityIcons
-                  name={
-                    stats?.curtiu
-                      ? "thumb-up"
-                      : "thumb-up-outline"
-                  }
-                  size={22}
-                  color={
-                    stats?.curtiu
-                      ? theme.blue
-                      : theme.textSecondary
-                  }
-                />
-
-                <Text
-                  style={[
-                    styles.postActionText,
-                    {
-                      color: stats?.curtiu
-                        ? theme.blue
-                        : theme.textSecondary,
-                    },
-                  ]}
-                >
-                  Gosto
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.postAction}
-                onPress={() =>
-                  abrirComentarios(criticaId)
-                }
-              >
-                <MaterialCommunityIcons
-                  name="comment-outline"
-                  size={22}
-                  color={theme.textSecondary}
-                />
-
-                <Text
-                  style={[
-                    styles.postActionText,
-                    {
-                      color:
-                        theme.textSecondary,
-                    },
-                  ]}
-                >
-                  Comentar
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-      </View>
-    );
-  };
-
-  const renderLivro = ({
-    item,
-  }: {
-    item: LivroEstante;
-  }) => {
-    if (!item.livro) return null;
-
-    return (
-      <View
-        style={[
-          styles.bookCard,
-          {
-            backgroundColor: theme.surface,
-            borderColor: theme.border,
-          },
-        ]}
-      >
-        {item.livro.imagem ? (
-          <Image
-            source={{
-              uri: item.livro.imagem,
-            }}
-            style={styles.libraryCover}
-          />
-        ) : (
-          <View
-            style={[
-              styles.libraryCoverPlaceholder,
-              {
-                backgroundColor:
-                  theme.blueSoft,
-              },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="book-open-page-variant"
-              size={34}
-              color={theme.blue}
-            />
-          </View>
-        )}
-
-        <View style={styles.libraryInfo}>
-          <Text
-            style={[
-              styles.libraryTitle,
-              { color: theme.text },
-            ]}
-            numberOfLines={2}
-          >
-            {item.livro.titulo}
-          </Text>
-
-          {item.livro.autor && (
-            <Text
-              style={[
-                styles.libraryAuthor,
-                {
-                  color:
-                    theme.textSecondary,
-                },
-              ]}
-              numberOfLines={2}
-            >
-              {item.livro.autor}
-            </Text>
-          )}
-
-          <View
-            style={[
-              styles.readBadge,
-              {
-                backgroundColor:
-                  theme.blueSoft,
-              },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="check-circle"
-              size={15}
-              color={theme.blue}
-            />
-
-            <Text
-              style={[
-                styles.readBadgeText,
-                { color: theme.blue },
-              ]}
-            >
-              Lido
-            </Text>
-          </View>
-        </View>
-      </View>
-    );
-  };
-
-  if (carregando && !usuario) {
-    return (
-      <SafeAreaView
-        style={[
-          styles.safeArea,
-          { backgroundColor: theme.background },
-        ]}
-        edges={["top"]}
-      >
-        <StatusBar
-          barStyle={
-            isDark
-              ? "light-content"
-              : "dark-content"
-          }
-          backgroundColor={theme.background}
-        />
-
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator
-            size="large"
-            color={theme.blue}
-          />
-
-          <Text
-            style={[
-              styles.loadingText,
-              { color: theme.textSecondary },
-            ]}
-          >
-            A carregar perfil...
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+function eStatusLido(valor: unknown): boolean {
+  const status = normalizarTexto(valor);
 
   return (
-    <SafeAreaView
-      style={[
-        styles.safeArea,
-        {
-          backgroundColor: theme.background,
-        },
-      ]}
-      edges={["top"]}
+    status === "lido" ||
+    status === "lidos" ||
+    status === "read" ||
+    status === "finished" ||
+    status === "finish" ||
+    status === "concluido" ||
+    status === "concluida" ||
+    status === "terminado" ||
+    status === "terminada" ||
+    status === "finalizado" ||
+    status === "finalizada"
+  );
+}
+
+function converterData(
+  valor?: string | number | Date | null,
+): Date | null {
+  if (
+    valor === undefined ||
+    valor === null ||
+    valor === ""
+  ) {
+    return null;
+  }
+
+  try {
+    if (valor instanceof Date) {
+      return Number.isNaN(valor.getTime())
+        ? null
+        : valor;
+    }
+
+    if (
+      typeof valor === "number" &&
+      valor > 0 &&
+      valor < 100000000000
+    ) {
+      const data = new Date(valor);
+
+      return Number.isNaN(data.getTime())
+        ? null
+        : data;
+    }
+
+    const data = new Date(valor);
+
+    return Number.isNaN(data.getTime())
+      ? null
+      : data;
+  } catch {
+    return null;
+  }
+}
+
+function formatarDataPublicacao(
+  valor?: string | number | Date | null,
+): string {
+  const data = converterData(valor);
+
+  if (!data) {
+    return "Publicação";
+  }
+
+  const agora = new Date();
+
+  const diferenca =
+    agora.getTime() - data.getTime();
+
+  if (diferenca < 0) {
+    return data.toLocaleDateString("pt-PT", {
+      day: "2-digit",
+      month: "short",
+      year:
+        data.getFullYear() !==
+          agora.getFullYear()
+          ? "numeric"
+          : undefined,
+    });
+  }
+
+  const minutos = Math.floor(
+    diferenca / 60000,
+  );
+
+  const horas = Math.floor(
+    minutos / 60,
+  );
+
+  const dias = Math.floor(
+    horas / 24,
+  );
+
+  if (minutos < 1) {
+    return "Agora mesmo";
+  }
+
+  if (minutos < 60) {
+    return `Há ${minutos} min`;
+  }
+
+  if (horas < 24) {
+    return `Há ${horas} h`;
+  }
+
+  if (dias < 7) {
+    return `Há ${dias} ${dias === 1 ? "dia" : "dias"
+      }`;
+  }
+
+  return data.toLocaleDateString("pt-PT", {
+    day: "2-digit",
+    month: "short",
+    year:
+      data.getFullYear() !==
+        agora.getFullYear()
+        ? "numeric"
+        : undefined,
+  });
+}
+
+
+
+function LivroIcon({
+  size = 42,
+  color = "#176B45",
+  pageColor = "#FFFFFF",
+}: {
+  size?: number;
+  color?: string;
+  pageColor?: string;
+}) {
+  const width = size;
+  const height = size * 0.82;
+
+  return (
+    <View
+      style={{
+        width,
+        height,
+        position: "relative",
+        justifyContent: "center",
+      }}
     >
-      <StatusBar
-        barStyle={
-          isDark
-            ? "light-content"
-            : "dark-content"
-        }
-        backgroundColor={theme.background}
+      <View
+        style={{
+          position: "absolute",
+          left: 3,
+          top: 3,
+          width: width * 0.46,
+          height: height * 0.78,
+          borderTopLeftRadius: 5,
+          borderBottomLeftRadius: 5,
+          backgroundColor: color,
+          borderWidth: 1,
+          borderColor: color,
+        }}
       />
 
       <View
-        style={[
-          styles.header,
-          {
-            backgroundColor: theme.surface,
-            borderBottomColor: theme.border,
-          },
-        ]}
-      >
-        <Text
+        style={{
+          position: "absolute",
+          right: 3,
+          top: 3,
+          width: width * 0.46,
+          height: height * 0.78,
+          borderTopRightRadius: 5,
+          borderBottomRightRadius: 5,
+          backgroundColor: pageColor,
+          borderWidth: 1,
+          borderColor: color,
+        }}
+      />
+
+      <View
+        style={{
+          position: "absolute",
+          left: width * 0.48,
+          top: 5,
+          width: 2,
+          height: height * 0.72,
+          backgroundColor: color,
+          opacity: 0.8,
+        }}
+      />
+
+      <View
+        style={{
+          position: "absolute",
+          left: width * 0.56,
+          top: height * 0.32,
+          width: width * 0.25,
+          height: 2,
+          borderRadius: 2,
+          backgroundColor: color,
+          opacity: 0.45,
+        }}
+      />
+
+      <View
+        style={{
+          position: "absolute",
+          left: width * 0.56,
+          top: height * 0.45,
+          width: width * 0.2,
+          height: 2,
+          borderRadius: 2,
+          backgroundColor: color,
+          opacity: 0.45,
+        }}
+      />
+    </View>
+  );
+}
+
+type AvatarProps = {
+  size?: number;
+  foto?: string | null;
+  nome?: string | null;
+  primaryDeep: string;
+  white?: string;
+};
+
+const Avatar = memo(
+  ({
+    size = 96,
+    foto = null,
+    nome = null,
+    primaryDeep,
+    white = "#FFFFFF",
+  }: AvatarProps) => {
+    const [imagemComErro, setImagemComErro] =
+      useState(false);
+
+    useEffect(() => {
+      setImagemComErro(false);
+    }, [foto]);
+
+    const tamanho = Math.max(1, size);
+
+    const containerStyle = {
+      width: tamanho,
+      height: tamanho,
+      borderRadius: tamanho / 2,
+    };
+
+    const primeiraLetra =
+      nome?.trim()?.charAt(0)?.toUpperCase() || "B";
+
+    if (!foto || imagemComErro) {
+      return (
+        <View
           style={[
-            styles.headerTitle,
-            { color: theme.text },
+            styles.avatarFallback,
+            containerStyle,
+            {
+              backgroundColor: primaryDeep,
+            },
           ]}
         >
-          Perfil
-        </Text>
-
-        <View style={styles.headerActions}>
-          <TouchableOpacity
+          <Text
             style={[
-              styles.headerButton,
+              styles.avatarLetter,
               {
-                backgroundColor:
-                  theme.surfaceSecondary,
+                color: white,
+                fontSize: tamanho * 0.38,
               },
             ]}
-            onPress={abrirEdicao}
           >
-            <MaterialCommunityIcons
-              name="pencil-outline"
-              size={22}
-              color={theme.text}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.headerButton,
-              {
-                backgroundColor:
-                  theme.surfaceSecondary,
-              },
-            ]}
-            onPress={confirmarLogout}
-          >
-            <MaterialCommunityIcons
-              name="logout"
-              size={22}
-              color={theme.text}
-            />
-          </TouchableOpacity>
+            {primeiraLetra}
+          </Text>
         </View>
+      );
+    }
+
+    return (
+      <View
+        style={[
+          styles.avatarImageContainer,
+          containerStyle,
+        ]}
+      >
+        <Image
+          source={{ uri: foto }}
+          style={[
+            styles.avatarImage,
+            {
+              width: tamanho,
+              height: tamanho,
+              borderRadius: tamanho / 2,
+            },
+          ]}
+          resizeMode="cover"
+          fadeDuration={0}
+          onError={() => {
+            setImagemComErro(true);
+          }}
+        />
       </View>
+    );
+  },
+);
 
-      <FlatList
-        data={
-          aba === "publicacoes"
-            ? publicacoesVisiveis
-            : livrosLidos
+Avatar.displayName = "Avatar";
+
+
+export default function Perfil() {
+  const router = useRouter();
+  const { usuario: usuarioContexto, setUsuario: setUsuarioContexto } = useUsuario();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
+
+  const colors = useMemo(
+    () => ({
+      background: isDark ? "#07150E" : "#F3F8F5",
+      card: isDark ? "#102019" : "#FFFFFF",
+      cardSecondary: isDark ? "#14281F" : "#F7FBF8",
+      text: isDark ? "#F1F7F3" : "#163325",
+      secondary: isDark ? "#A6B8AE" : "#6B7D72",
+      primary: isDark ? "#4FAF7A" : "#176B45",
+      primaryDark: isDark ? "#2C8C5C" : "#0F5939",
+      primaryDeep: "#0D4D31",
+      border: isDark ? "#244033" : "#DCE9E1",
+      soft: isDark ? "#162A20" : "#EDF6F0",
+      muted: isDark ? "#1A3024" : "#E7F1EA",
+      input: isDark ? "#0D1C15" : "#F8FBF9",
+      danger: isDark ? "#EF6B6B" : "#D94B4B",
+      dangerSoft: isDark ? "#331B1F" : "#FDECEC",
+      white: "#FFFFFF",
+    }),
+    [isDark],
+  );
+
+  const [usuario, setUsuario] =
+    useState<Usuario | null>(null);
+
+  const [
+    publicacoesUsuario,
+    setPublicacoesUsuario,
+  ] = useState<Publicacao[]>([]);
+
+  const [livrosLidos, setLivrosLidos] =
+    useState<LivroLido[]>([]);
+
+  const [aba, setAba] =
+    useState<AbaPerfil>("publicacoes");
+
+  const [menuVisible, setMenuVisible] =
+    useState(false);
+
+  const [
+    editModalVisible,
+    setEditModalVisible,
+  ] = useState(false);
+
+  const [novoNome, setNovoNome] =
+    useState("");
+
+  const [fotoLocal, setFotoLocal] =
+    useState<string | null>(null);
+
+  const [carregando, setCarregando] =
+    useState(true);
+
+  const [atualizando, setAtualizando] =
+    useState(false);
+
+  const [salvando, setSalvando] =
+    useState(false);
+
+  const [
+    selecionandoFoto,
+    setSelecionandoFoto,
+  ] = useState(false);
+
+  const [
+    estatisticasPublicacoes,
+    setEstatisticasPublicacoes,
+  ] = useState<
+    Record<string, EstatisticaPublicacao>
+  >({});
+
+  const [
+    comentariosVisible,
+    setComentariosVisible,
+  ] = useState(false);
+
+  const [
+    publicacaoSelecionada,
+    setPublicacaoSelecionada,
+  ] = useState<Publicacao | null>(null);
+
+  const [
+    comentariosLista,
+    setComentariosLista,
+  ] = useState<Comentario[]>([]);
+
+  const [
+    comentarioTexto,
+    setComentarioTexto,
+  ] = useState("");
+
+  const [
+    carregandoComentarios,
+    setCarregandoComentarios,
+  ] = useState(false);
+
+  const [
+    enviandoComentario,
+    setEnviandoComentario,
+  ] = useState(false);
+
+  const carregandoRef =
+    useRef(false);
+
+  const mountedRef =
+    useRef(true);
+
+  const ultimoCarregamentoRef =
+    useRef(0);
+
+  const processandoCurtidaRef =
+    useRef<Record<string, boolean>>({});
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  /*
+   * =========================================================
+   * ESTATÍSTICAS DAS PUBLICAÇÕES
+   * =========================================================
+   */
+
+  const carregarEstatisticasPublicacoes =
+    useCallback(
+      async (
+        publicacoes: Publicacao[],
+        usuarioId: string,
+      ) => {
+        const criticasValidas =
+          publicacoes.filter(
+            (publicacao) =>
+              publicacao.criticaId !== null &&
+              publicacao.criticaId !== undefined &&
+              Number.isFinite(
+                Number(publicacao.criticaId),
+              ),
+          );
+
+        if (criticasValidas.length === 0) {
+          if (mountedRef.current) {
+            setEstatisticasPublicacoes({});
+          }
+
+          return;
         }
-        keyExtractor={(item, index) =>
-          String(
-            "id" in item && item.id != null
-              ? item.id
-              : index
+
+        const resultados =
+          await Promise.all(
+            criticasValidas.map(
+              async (publicacao) => {
+                const criticaId =
+                  Number(
+                    publicacao.criticaId,
+                  );
+
+                try {
+                  const estatisticas =
+                    await obterEstatisticasCritica(
+                      criticaId,
+                      usuarioId,
+                    );
+
+                  return [
+                    String(criticaId),
+                    estatisticas,
+                  ] as const;
+                } catch (erro) {
+                  console.error(
+                    `Erro ao carregar estatísticas da crítica ${criticaId}:`,
+                    erro,
+                  );
+
+                  return [
+                    String(criticaId),
+                    {
+                      curtidas: 0,
+                      comentarios: 0,
+                      curtiu: false,
+                    },
+                  ] as const;
+                }
+              },
+            ),
+          );
+
+        const mapa =
+          Object.fromEntries(
+            resultados,
+          );
+
+        if (!mountedRef.current) {
+          return;
+        }
+
+        setEstatisticasPublicacoes(
+          mapa,
+        );
+
+        setPublicacoesUsuario(
+          (atuais) =>
+            atuais.map(
+              (publicacao) => {
+                const criticaId =
+                  publicacao.criticaId;
+
+                if (
+                  criticaId === null ||
+                  criticaId === undefined
+                ) {
+                  return publicacao;
+                }
+
+                const estatistica =
+                  mapa[
+                  String(criticaId)
+                  ];
+
+                if (!estatistica) {
+                  return publicacao;
+                }
+
+                return {
+                  ...publicacao,
+                  curtidas:
+                    estatistica.curtidas,
+                  comentarios:
+                    estatistica.comentarios,
+                  curtiu:
+                    estatistica.curtiu,
+                };
+              },
+            ),
+        );
+      },
+      [],
+    );
+
+  /*
+   * =========================================================
+   * CARREGAR PERFIL
+   * =========================================================
+   */
+
+  const carregarPerfil =
+    useCallback(
+      async (
+        mostrarLoading = true,
+        forcar = false,
+      ) => {
+        if (carregandoRef.current) {
+          return;
+        }
+
+        const agora = Date.now();
+
+        if (
+          !forcar &&
+          agora -
+          ultimoCarregamentoRef.current <
+          2500
+        ) {
+          return;
+        }
+
+        carregandoRef.current = true;
+        ultimoCarregamentoRef.current =
+          agora;
+
+        try {
+          if (
+            mostrarLoading &&
+            mountedRef.current
+          ) {
+            setCarregando(true);
+          }
+
+          const sessao =
+            await AsyncStorage.getItem(
+              "usuarioLogado",
+            );
+
+          let usuarioLogado: any = null;
+
+          try {
+            usuarioLogado = sessao
+              ? JSON.parse(sessao)
+              : null;
+          } catch {
+            usuarioLogado = null;
+          }
+
+          /*
+           * A autenticação é controlada pelo authToken +
+           * UsuarioContext. O SQLite local NÃO é usado para
+           * decidir se a sessão é válida, porque no Android a
+           * conta criada/autenticada na API pode ainda não
+           * existir na base SQLite local do dispositivo.
+           */
+          const usuarioFonte =
+            usuarioContexto ??
+            (usuarioLogado?.id && usuarioLogado?.nome
+              ? {
+                id: String(usuarioLogado.id),
+                nome: String(usuarioLogado.nome),
+                foto_perfil:
+                  usuarioLogado.foto_perfil ?? null,
+                createdAt:
+                  usuarioLogado.createdAt,
+              }
+              : null);
+
+          if (!usuarioFonte?.id) {
+            if (mountedRef.current) {
+              setUsuario(null);
+              setPublicacoesUsuario([]);
+              setLivrosLidos([]);
+            }
+
+            /*
+             * Só removemos a sessão quando realmente não há
+             * utilizador disponível. A ausência de registo na
+             * SQLite local não é motivo para terminar a sessão.
+             */
+            const tokenAtual =
+              await AsyncStorage.getItem("authToken");
+
+            if (!tokenAtual?.trim()) {
+              await AsyncStorage.removeItem("usuarioLogado");
+              router.replace("/login");
+            }
+
+            return;
+          }
+
+          const usuarioId = String(usuarioFonte.id);
+
+          /*
+           * Começamos pelos dados da sessão/API. Se existir um
+           * registo local, usamos os dados locais mais recentes
+           * apenas para complementar o perfil.
+           */
+          let usuarioAtual: Usuario = {
+            id: usuarioId,
+            nome:
+              String(usuarioFonte.nome ?? "Utilizador").trim() ||
+              "Utilizador",
+            foto_perfil:
+              usuarioFonte.foto_perfil ?? null,
+          };
+
+          try {
+            const usuarioBanco =
+              await db
+                .select()
+                .from(usuarios)
+                .where(
+                  eq(
+                    usuarios.id,
+                    usuarioId,
+                  ),
+                )
+                .limit(1);
+
+            if (usuarioBanco.length > 0) {
+              const usuarioBancoAtual =
+                usuarioBanco[0];
+
+              usuarioAtual = {
+                id: String(usuarioBancoAtual.id),
+                nome:
+                  String(
+                    usuarioBancoAtual.nome ??
+                    usuarioAtual.nome,
+                  ).trim() ||
+                  usuarioAtual.nome,
+                foto_perfil:
+                  usuarioBancoAtual.foto_perfil ??
+                  usuarioAtual.foto_perfil ??
+                  null,
+              };
+            }
+          } catch (erro) {
+            /*
+             * Falha no SQLite local não invalida a sessão da API.
+             */
+            console.warn(
+              "SQLite local indisponível para o perfil; usando os dados da sessão.",
+              erro,
+            );
+          }
+
+          if (mountedRef.current) {
+            setUsuario(
+              (usuarioAnterior) => {
+                if (
+                  usuarioAnterior?.id === usuarioAtual.id &&
+                  usuarioAnterior.nome === usuarioAtual.nome &&
+                  usuarioAnterior.foto_perfil === usuarioAtual.foto_perfil
+                ) {
+                  return usuarioAnterior;
+                }
+
+                return usuarioAtual;
+              },
+            );
+
+            setNovoNome(
+              (nomeAnterior) =>
+                nomeAnterior === usuarioAtual.nome
+                  ? nomeAnterior
+                  : usuarioAtual.nome,
+            );
+
+            setFotoLocal(
+              (fotoAnterior) => {
+                const novaFoto =
+                  usuarioAtual.foto_perfil ?? null;
+
+                return fotoAnterior === novaFoto
+                  ? fotoAnterior
+                  : novaFoto;
+              },
+            );
+
+            /* Mantém o estado global sincronizado. */
+            setUsuarioContexto(usuarioAtual);
+          }
+
+          await AsyncStorage.setItem(
+            "usuarioLogado",
+            JSON.stringify({
+              ...usuarioLogado,
+              id: usuarioAtual.id,
+              nome: usuarioAtual.nome,
+              foto_perfil:
+                usuarioAtual.foto_perfil ?? null,
+              perfilAtualizadoEm: Date.now(),
+            }),
+          );
+
+          /*
+           * =================================================
+           * PUBLICAÇÕES
+           * =================================================
+           */
+
+          try {
+            const registrosFeed =
+              await db
+                .select()
+                .from(feed)
+                .where(
+                  eq(
+                    feed.usuario_id,
+                    usuarioAtual.id,
+                  ),
+                );
+
+            const criticasUsuario =
+              await db
+                .select()
+                .from(criticas)
+                .where(
+                  eq(
+                    criticas.usuario_id,
+                    usuarioAtual.id,
+                  ),
+                );
+
+            const idsLivrosFeed =
+              registrosFeed
+                .map(
+                  (item) =>
+                    item.livro_id,
+                )
+                .filter(
+                  (
+                    id,
+                  ): id is string =>
+                    Boolean(id),
+                );
+
+            const idsLivrosCriticas =
+              criticasUsuario
+                .map(
+                  (item) =>
+                    item.livro_id,
+                )
+                .filter(
+                  (
+                    id,
+                  ): id is string =>
+                    Boolean(id),
+                );
+
+            const idsLivros =
+              Array.from(
+                new Set([
+                  ...idsLivrosFeed,
+                  ...idsLivrosCriticas,
+                ]),
+              );
+
+            let livrosRelacionados:
+              any[] = [];
+
+            if (
+              idsLivros.length > 0
+            ) {
+              livrosRelacionados =
+                await db
+                  .select()
+                  .from(livros)
+                  .where(
+                    inArray(
+                      livros.id,
+                      idsLivros,
+                    ),
+                  );
+            }
+
+            const livrosMap =
+              new Map<string, any>();
+
+            livrosRelacionados.forEach(
+              (livro) => {
+                livrosMap.set(
+                  String(livro.id),
+                  livro,
+                );
+              },
+            );
+
+            const criticasMap =
+              new Map<string, any>();
+
+            criticasUsuario.forEach(
+              (critica) => {
+                criticasMap.set(
+                  String(critica.id),
+                  critica,
+                );
+              },
+            );
+
+            const publicacoesFormatadas =
+              registrosFeed
+                .map(
+                  (
+                    item,
+                  ): Publicacao | null => {
+                    const critica =
+                      item.critica_id
+                        ? criticasMap.get(
+                          String(
+                            item.critica_id,
+                          ),
+                        )
+                        : null;
+
+                    const livroId =
+                      item.livro_id ??
+                      critica?.livro_id ??
+                      null;
+
+                    const livro =
+                      livroId
+                        ? livrosMap.get(
+                          String(
+                            livroId,
+                          ),
+                        )
+                        : null;
+
+                    const tipo =
+                      item.tipo ?? null;
+
+                    const texto =
+                      critica?.texto ??
+                      null;
+
+                    const titulo =
+                      livro?.titulo ??
+                      null;
+
+                    const autor =
+                      livro?.autor ??
+                      null;
+
+                    const imagem =
+                      livro?.imagem ??
+                      null;
+
+                    if (
+                      !texto &&
+                      !titulo &&
+                      !imagem &&
+                      !tipo
+                    ) {
+                      return null;
+                    }
+
+                    return {
+                      id: item.id,
+                      tipo,
+                      texto,
+                      titulo,
+                      autor,
+                      imagem,
+                      criado_em:
+                        item.createdAt,
+                      livroId: livroId
+                        ? String(
+                          livroId,
+                        )
+                        : null,
+                      criticaId:
+                        item.critica_id,
+                      curtidas: 0,
+                      comentarios: 0,
+                      curtiu: false,
+                    };
+                  },
+                )
+                .filter(
+                  (
+                    item,
+                  ): item is Publicacao =>
+                    Boolean(item),
+                )
+                .sort(
+                  (a, b) => {
+                    const dataA =
+                      converterData(
+                        a.criado_em,
+                      )?.getTime() ?? 0;
+
+                    const dataB =
+                      converterData(
+                        b.criado_em,
+                      )?.getTime() ?? 0;
+
+                    return (
+                      dataB - dataA
+                    );
+                  },
+                );
+
+            const publicacoesUnicas =
+              Array.from(
+                new Map(
+                  publicacoesFormatadas.map(
+                    (item) => [
+                      String(item.id),
+                      item,
+                    ],
+                  ),
+                ).values(),
+              );
+
+            if (mountedRef.current) {
+              setPublicacoesUsuario(
+                publicacoesUnicas,
+              );
+            }
+
+            await carregarEstatisticasPublicacoes(
+              publicacoesUnicas,
+              usuarioAtual.id,
+            );
+          } catch (erro) {
+            console.error(
+              "Erro ao carregar publicações:",
+              erro,
+            );
+
+            if (mountedRef.current) {
+              setPublicacoesUsuario([]);
+              setEstatisticasPublicacoes(
+                {},
+              );
+            }
+          }
+
+          /*
+           * =================================================
+           * LIVROS LIDOS
+           * =================================================
+           */
+
+          try {
+            const registrosEstantes =
+              await db
+                .select()
+                .from(estantes)
+                .where(
+                  eq(
+                    estantes.usuario_id,
+                    usuarioAtual.id,
+                  ),
+                );
+
+            const registrosLidos =
+              registrosEstantes.filter(
+                (item) =>
+                  eStatusLido(
+                    item.status,
+                  ),
+              );
+
+            const idsLivrosLidos =
+              Array.from(
+                new Set(
+                  registrosLidos.map(
+                    (item) =>
+                      item.livro_id,
+                  ),
+                ),
+              );
+
+            if (
+              idsLivrosLidos.length === 0
+            ) {
+              if (mountedRef.current) {
+                setLivrosLidos([]);
+              }
+            } else {
+              const livrosEncontrados =
+                await db
+                  .select()
+                  .from(livros)
+                  .where(
+                    inArray(
+                      livros.id,
+                      idsLivrosLidos,
+                    ),
+                  );
+
+              const livrosMap =
+                new Map<string, any>();
+
+              livrosEncontrados.forEach(
+                (livro) => {
+                  livrosMap.set(
+                    String(livro.id),
+                    livro,
+                  );
+                },
+              );
+
+              const livrosFormatados =
+                idsLivrosLidos
+                  .map((id) =>
+                    livrosMap.get(
+                      String(id),
+                    ),
+                  )
+                  .filter(
+                    (
+                      livro,
+                    ): livro is any =>
+                      Boolean(livro),
+                  )
+                  .map(
+                    (
+                      livro,
+                    ): LivroLido => ({
+                      id: String(
+                        livro.id,
+                      ),
+                      titulo:
+                        livro.titulo ??
+                        null,
+                      autor:
+                        livro.autor ??
+                        null,
+                      imagem:
+                        livro.imagem ??
+                        null,
+                    }),
+                  );
+
+              const livrosUnicos =
+                Array.from(
+                  new Map(
+                    livrosFormatados.map(
+                      (livro) => [
+                        String(
+                          livro.id,
+                        ),
+                        livro,
+                      ],
+                    ),
+                  ).values(),
+                );
+
+              if (mountedRef.current) {
+                setLivrosLidos(
+                  livrosUnicos,
+                );
+              }
+            }
+          } catch (erro) {
+            console.error(
+              "Erro ao carregar livros lidos:",
+              erro,
+            );
+
+            if (mountedRef.current) {
+              setLivrosLidos([]);
+            }
+          }
+        } catch (erro) {
+          console.error(
+            "Erro ao carregar perfil:",
+            erro,
+          );
+        } finally {
+          carregandoRef.current =
+            false;
+
+          if (mountedRef.current) {
+            setCarregando(false);
+            setAtualizando(false);
+          }
+        }
+      },
+      [
+        router,
+        carregarEstatisticasPublicacoes,
+        usuarioContexto,
+        setUsuarioContexto,
+      ],
+    );
+
+  /*
+   * =========================================================
+   * FOCO DA PÁGINA
+   * =========================================================
+   */
+
+  useFocusEffect(
+    useCallback(() => {
+      void carregarPerfil(
+        !usuario,
+        true,
+      );
+
+      return undefined;
+    }, [
+      carregarPerfil,
+      usuario,
+    ]),
+  );
+
+  /*
+   * =========================================================
+   * SINCRONIZAÇÃO AUTOMÁTICA
+   * =========================================================
+   */
+
+  useEffect(() => {
+    const intervalo =
+      setInterval(() => {
+        if (
+          AppState.currentState ===
+          "active"
+        ) {
+          void carregarPerfil(
+            false,
+            false,
+          );
+        }
+      }, 15000);
+
+    return () => {
+      clearInterval(intervalo);
+    };
+  }, [carregarPerfil]);
+
+  useEffect(() => {
+    const handleAppStateChange =
+      (
+        nextState: AppStateStatus,
+      ) => {
+        if (
+          nextState === "active"
+        ) {
+          void carregarPerfil(
+            false,
+            true,
+          );
+        }
+      };
+
+    const subscription =
+      AppState.addEventListener(
+        "change",
+        handleAppStateChange,
+      );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [carregarPerfil]);
+
+  /*
+   * =========================================================
+   * ATUALIZAR
+   * =========================================================
+   */
+
+  const atualizarPerfil =
+    useCallback(async () => {
+      if (carregandoRef.current) {
+        return;
+      }
+
+      setAtualizando(true);
+
+      await carregarPerfil(
+        false,
+        true,
+      );
+    }, [carregarPerfil]);
+
+  /*
+   * =========================================================
+   * CURTIR / DESCURTIR
+   * =========================================================
+   */
+
+  const alternarCurtida =
+    useCallback(
+      async (
+        publicacao: Publicacao,
+      ) => {
+        const criticaId =
+          Number(
+            publicacao.criticaId,
+          );
+
+        if (
+          !Number.isInteger(
+            criticaId,
           )
+        ) {
+          return;
         }
-        renderItem={
-          aba === "publicacoes"
-            ? (renderPublicacao as any)
-            : (renderLivro as any)
+
+        const usuarioId =
+          usuario?.id;
+
+        if (!usuarioId) {
+          Alert.alert(
+            "Sessão necessária",
+            "Inicie sessão para poder curtir publicações.",
+          );
+
+          return;
         }
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={atualizar}
-            tintColor={theme.blue}
-            colors={[theme.blue]}
-          />
+
+        const chave =
+          String(criticaId);
+
+        if (
+          processandoCurtidaRef
+            .current[chave]
+        ) {
+          return;
         }
-        ListHeaderComponent={
-          <View>
-            <View
-              style={[
-                styles.profileCard,
-                {
-                  backgroundColor:
-                    theme.surface,
-                  borderColor:
-                    theme.border,
+
+        processandoCurtidaRef.current[
+          chave
+        ] = true;
+
+        try {
+          const novaCurtida =
+            await toggleCurtida(
+              usuarioId,
+              criticaId,
+            );
+
+          setEstatisticasPublicacoes(
+            (atuais) => {
+              const anterior =
+                atuais[chave] ?? {
+                  curtidas:
+                    publicacao.curtidas ??
+                    0,
+                  comentarios:
+                    publicacao.comentarios ??
+                    0,
+                  curtiu: false,
+                };
+
+              const quantidade =
+                Math.max(
+                  0,
+                  anterior.curtidas +
+                  (novaCurtida
+                    ? 1
+                    : -1),
+                );
+
+              return {
+                ...atuais,
+                [chave]: {
+                  ...anterior,
+                  curtidas:
+                    quantidade,
+                  curtiu:
+                    novaCurtida,
                 },
-              ]}
-            >
-              <View
-                style={[
-                  styles.coverHeader,
-                  {
-                    backgroundColor:
-                      theme.blue,
-                  },
-                ]}
-              />
+              };
+            },
+          );
 
-              <View style={styles.profileMain}>
-                <View
-                  style={[
-                    styles.profileAvatarWrapper,
-                    {
-                      backgroundColor:
-                        theme.surface,
-                    },
-                  ]}
-                >
-                  {renderAvatar(
-                    104,
-                    usuario?.foto_perfil
-                  )}
-                </View>
+          setPublicacoesUsuario(
+            (atuais) =>
+              atuais.map(
+                (item) => {
+                  if (
+                    String(
+                      item.criticaId,
+                    ) !== chave
+                  ) {
+                    return item;
+                  }
 
-                <Text
-                  style={[
-                    styles.profileName,
-                    { color: theme.text },
-                  ]}
-                  numberOfLines={2}
-                >
-                  {usuario?.nome ?? "Utilizador"}
-                </Text>
+                  const quantidadeAtual =
+                    item.curtidas ?? 0;
 
-                <Text
-                  style={[
-                    styles.profileSubtitle,
-                    {
-                      color:
-                        theme.textSecondary,
-                    },
-                  ]}
-                >
-                  Leitor e membro da comunidade
-                </Text>
-
-                <View
-                  style={[
-                    styles.profileStats,
-                    {
-                      borderTopColor:
-                        theme.border,
-                    },
-                  ]}
-                >
-                  <View style={styles.profileStat}>
-                    <Text
-                      style={[
-                        styles.profileStatNumber,
-                        {
-                          color:
-                            theme.text,
-                        },
-                      ]}
-                    >
-                      {publicacoesVisiveis.length}
-                    </Text>
-
-                    <Text
-                      style={[
-                        styles.profileStatLabel,
-                        {
-                          color:
-                            theme.textSecondary,
-                        },
-                      ]}
-                    >
-                      Publicações
-                    </Text>
-                  </View>
-
-                  <View
-                    style={[
-                      styles.profileStatDivider,
-                      {
-                        backgroundColor:
-                          theme.border,
-                      },
-                    ]}
-                  />
-
-                  <View style={styles.profileStat}>
-                    <Text
-                      style={[
-                        styles.profileStatNumber,
-                        {
-                          color:
-                            theme.text,
-                        },
-                      ]}
-                    >
-                      {livrosLidos.length}
-                    </Text>
-
-                    <Text
-                      style={[
-                        styles.profileStatLabel,
-                        {
-                          color:
-                            theme.textSecondary,
-                        },
-                      ]}
-                    >
-                      Livros lidos
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            <View
-              style={[
-                styles.tabs,
-                {
-                  backgroundColor:
-                    theme.surface,
-                  borderColor:
-                    theme.border,
+                  return {
+                    ...item,
+                    curtidas:
+                      Math.max(
+                        0,
+                        quantidadeAtual +
+                        (novaCurtida
+                          ? 1
+                          : -1),
+                      ),
+                    curtiu:
+                      novaCurtida,
+                  };
                 },
-              ]}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.tab,
-                  aba === "publicacoes" &&
-                  styles.tabActive,
-                  aba === "publicacoes" && {
-                    borderBottomColor:
-                      theme.blue,
-                  },
-                ]}
-                onPress={() =>
-                  setAba("publicacoes")
-                }
-              >
-                <MaterialCommunityIcons
-                  name="newspaper-variant-outline"
-                  size={20}
-                  color={
-                    aba === "publicacoes"
-                      ? theme.blue
-                      : theme.textSecondary
-                  }
-                />
+              ),
+          );
+        } catch (erro) {
+          console.error(
+            "Erro ao alternar curtida:",
+            erro,
+          );
 
-                <Text
-                  style={[
-                    styles.tabText,
-                    {
-                      color:
-                        aba === "publicacoes"
-                          ? theme.blue
-                          : theme.textSecondary,
-                    },
-                  ]}
-                >
-                  Publicações
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.tab,
-                  aba === "livros" &&
-                  styles.tabActive,
-                  aba === "livros" && {
-                    borderBottomColor:
-                      theme.blue,
-                  },
-                ]}
-                onPress={() =>
-                  setAba("livros")
-                }
-              >
-                <MaterialCommunityIcons
-                  name="bookshelf"
-                  size={20}
-                  color={
-                    aba === "livros"
-                      ? theme.blue
-                      : theme.textSecondary
-                  }
-                />
-
-                <Text
-                  style={[
-                    styles.tabText,
-                    {
-                      color:
-                        aba === "livros"
-                          ? theme.blue
-                          : theme.textSecondary,
-                    },
-                  ]}
-                >
-                  Livros lidos
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          Alert.alert(
+            "Não foi possível",
+            "Não foi possível atualizar a curtida. Tente novamente.",
+          );
+        } finally {
+          delete processandoCurtidaRef
+            .current[chave];
         }
-        ListEmptyComponent={
+      },
+      [usuario?.id],
+    );
+
+  /*
+   * =========================================================
+   * ABRIR COMENTÁRIOS
+   * =========================================================
+   */
+
+  const abrirComentarios =
+    useCallback(
+      async (
+        publicacao: Publicacao,
+      ) => {
+        const criticaId =
+          Number(
+            publicacao.criticaId,
+          );
+
+        if (
+          !Number.isInteger(
+            criticaId,
+          )
+        ) {
+          return;
+        }
+
+        setPublicacaoSelecionada(
+          publicacao,
+        );
+
+        setComentariosVisible(
+          true,
+        );
+
+        setComentarioTexto("");
+
+        setCarregandoComentarios(
+          true,
+        );
+
+        try {
+          const lista =
+            await listarComentarios(
+              criticaId,
+            );
+
+          if (mountedRef.current) {
+            setComentariosLista(
+              lista,
+            );
+          }
+        } catch (erro) {
+          console.error(
+            "Erro ao carregar comentários:",
+            erro,
+          );
+
+          Alert.alert(
+            "Erro",
+            "Não foi possível carregar os comentários.",
+          );
+
+          setComentariosLista([]);
+        } finally {
+          if (mountedRef.current) {
+            setCarregandoComentarios(
+              false,
+            );
+          }
+        }
+      },
+      [],
+    );
+
+  /*
+   * =========================================================
+   * FECHAR COMENTÁRIOS
+   * =========================================================
+   */
+
+  const fecharComentarios =
+    useCallback(() => {
+      if (enviandoComentario) {
+        return;
+      }
+
+      setComentariosVisible(
+        false,
+      );
+
+      setPublicacaoSelecionada(
+        null,
+      );
+
+      setComentariosLista([]);
+
+      setComentarioTexto("");
+    }, [enviandoComentario]);
+
+  /*
+   * =========================================================
+   * ENVIAR COMENTÁRIO
+   * =========================================================
+   */
+
+  const enviarComentario =
+    useCallback(async () => {
+      const texto =
+        comentarioTexto.trim();
+
+      if (!texto) {
+        return;
+      }
+
+      if (
+        !usuario?.id ||
+        !publicacaoSelecionada
+      ) {
+        return;
+      }
+
+      const criticaId =
+        Number(
+          publicacaoSelecionada.criticaId,
+        );
+
+      if (
+        !Number.isInteger(
+          criticaId,
+        )
+      ) {
+        return;
+      }
+
+      try {
+        setEnviandoComentario(
+          true,
+        );
+
+        const novoComentario =
+          await criarComentario(
+            usuario.id,
+            criticaId,
+            texto,
+          );
+
+        setComentariosLista(
+          (atuais) => [
+            novoComentario,
+            ...atuais,
+          ],
+        );
+
+        setComentarioTexto("");
+
+        const chave =
+          String(criticaId);
+
+        setEstatisticasPublicacoes(
+          (atuais) => {
+            const anterior =
+              atuais[chave] ?? {
+                curtidas: 0,
+                comentarios: 0,
+                curtiu: false,
+              };
+
+            return {
+              ...atuais,
+              [chave]: {
+                ...anterior,
+                comentarios:
+                  anterior.comentarios +
+                  1,
+              },
+            };
+          },
+        );
+
+        setPublicacoesUsuario(
+          (atuais) =>
+            atuais.map(
+              (item) => {
+                if (
+                  String(
+                    item.criticaId,
+                  ) !== chave
+                ) {
+                  return item;
+                }
+
+                return {
+                  ...item,
+                  comentarios:
+                    (item.comentarios ??
+                      0) + 1,
+                };
+              },
+            ),
+        );
+      } catch (erro) {
+        console.error(
+          "Erro ao enviar comentário:",
+          erro,
+        );
+
+        Alert.alert(
+          "Não foi possível",
+          "O comentário não pôde ser publicado.",
+        );
+      } finally {
+        if (mountedRef.current) {
+          setEnviandoComentario(
+            false,
+          );
+        }
+      }
+    }, [
+      comentarioTexto,
+      usuario?.id,
+      publicacaoSelecionada,
+    ]);
+
+  /*
+   * =========================================================
+   * ABRIR EDIÇÃO
+   * =========================================================
+   */
+
+  const abrirEdicao =
+    useCallback(() => {
+      if (!usuario || salvando) {
+        return;
+      }
+
+      setNovoNome(usuario.nome);
+
+      setFotoLocal(
+        usuario.foto_perfil ??
+        null,
+      );
+
+      setMenuVisible(false);
+
+      requestAnimationFrame(() => {
+        setEditModalVisible(
+          true,
+        );
+      });
+    }, [usuario, salvando]);
+
+  /*
+   * =========================================================
+   * SELECIONAR FOTO
+   * =========================================================
+   */
+
+  const selecionarFoto =
+    useCallback(async () => {
+      if (
+        salvando ||
+        selecionandoFoto
+      ) {
+        return;
+      }
+
+      try {
+        setSelecionandoFoto(
+          true,
+        );
+
+        const permissao =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+        if (!permissao.granted) {
+          Alert.alert(
+            "Permissão necessária",
+            "Permita o acesso às fotografias para escolher uma foto de perfil.",
+          );
+
+          return;
+        }
+
+        const resultado =
+          await ImagePicker.launchImageLibraryAsync(
+            {
+              mediaTypes:
+                ImagePicker.MediaTypeOptions
+                  .Images,
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.85,
+            },
+          );
+
+        if (
+          !resultado.canceled &&
+          resultado.assets?.length
+        ) {
+          setFotoLocal(
+            resultado.assets[0].uri,
+          );
+        }
+      } catch (erro) {
+        console.error(
+          "Erro ao selecionar foto:",
+          erro,
+        );
+
+        Alert.alert(
+          "Erro",
+          "Não foi possível selecionar a foto.",
+        );
+      } finally {
+        setSelecionandoFoto(
+          false,
+        );
+      }
+    }, [
+      salvando,
+      selecionandoFoto,
+    ]);
+
+  /*
+   * =========================================================
+   * SALVAR PERFIL
+   * =========================================================
+   */
+
+  const salvarPerfil =
+    useCallback(async () => {
+      if (!usuario || salvando) {
+        return;
+      }
+
+      const nomeLimpo =
+        novoNome.trim();
+
+      if (!nomeLimpo) {
+        Alert.alert(
+          "Atenção",
+          "Digite um nome válido.",
+        );
+
+        return;
+      }
+
+      try {
+        setSalvando(true);
+
+        await db
+          .update(usuarios)
+          .set({
+            nome: nomeLimpo,
+            foto_perfil:
+              fotoLocal ?? null,
+          })
+          .where(
+            eq(
+              usuarios.id,
+              usuario.id,
+            ),
+          );
+
+        const usuarioConfirmado =
+          await db
+            .select()
+            .from(usuarios)
+            .where(
+              eq(
+                usuarios.id,
+                usuario.id,
+              ),
+            )
+            .limit(1);
+
+        if (
+          usuarioConfirmado.length === 0
+        ) {
+          throw new Error(
+            "Não foi possível confirmar os dados atualizados.",
+          );
+        }
+
+        const dadosConfirmados =
+          usuarioConfirmado[0];
+
+        const usuarioAtualizado: Usuario =
+        {
+          id: String(
+            dadosConfirmados.id,
+          ),
+          nome:
+            dadosConfirmados.nome,
+          foto_perfil:
+            dadosConfirmados.foto_perfil ??
+            null,
+        };
+
+        if (mountedRef.current) {
+          setUsuario(
+            usuarioAtualizado,
+          );
+
+          setNovoNome(
+            usuarioAtualizado.nome,
+          );
+
+          setFotoLocal(
+            usuarioAtualizado.foto_perfil ??
+            null,
+          );
+        }
+
+        const sessaoAtual =
+          await AsyncStorage.getItem(
+            "usuarioLogado",
+          );
+
+        let sessaoAnterior: any =
+          {};
+
+        try {
+          sessaoAnterior =
+            sessaoAtual
+              ? JSON.parse(
+                sessaoAtual,
+              )
+              : {};
+        } catch {
+          sessaoAnterior = {};
+        }
+
+        await AsyncStorage.setItem(
+          "usuarioLogado",
+          JSON.stringify({
+            ...sessaoAnterior,
+            id: usuarioAtualizado.id,
+            nome:
+              usuarioAtualizado.nome,
+            foto_perfil:
+              usuarioAtualizado.foto_perfil ??
+              null,
+            perfilAtualizadoEm:
+              Date.now(),
+          }),
+        );
+
+        if (mountedRef.current) {
+          setEditModalVisible(
+            false,
+          );
+        }
+
+        Alert.alert(
+          "Perfil atualizado",
+          "Os seus dados foram guardados e sincronizados com a sua conta.",
+        );
+
+        /*
+         * Não fazemos um novo carregarPerfil() imediatamente
+         * porque o estado já foi atualizado acima.
+         * Isso evita um novo ciclo de renderização e possíveis
+         * oscilações da imagem do Avatar.
+         */
+      } catch (erro) {
+        console.error(
+          "Erro ao salvar perfil:",
+          erro,
+        );
+
+        Alert.alert(
+          "Erro",
+          "Não foi possível atualizar os dados do perfil.",
+        );
+      } finally {
+        if (mountedRef.current) {
+          setSalvando(false);
+        }
+      }
+    }, [
+      usuario,
+      salvando,
+      novoNome,
+      fotoLocal,
+    ]);
+
+  /*
+   * =========================================================
+   * TERMINAR SESSÃO
+   * =========================================================
+   */
+
+  const terminarSessao =
+    useCallback(() => {
+      Alert.alert(
+        "Terminar sessão",
+        "Deseja realmente sair da sua conta?",
+        [
+          {
+            text: "Cancelar",
+            style: "cancel",
+          },
+          {
+            text: "Sair",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await AsyncStorage.removeItem(
+                  "usuarioLogado",
+                );
+
+                await AsyncStorage.removeItem(
+                  "authToken",
+                );
+
+                setMenuVisible(
+                  false,
+                );
+
+                setEditModalVisible(
+                  false,
+                );
+
+                setUsuario(null);
+                setUsuarioContexto(null);
+                setNovoNome("");
+                setFotoLocal(null);
+
+                setPublicacoesUsuario(
+                  [],
+                );
+
+                setLivrosLidos([]);
+
+                setEstatisticasPublicacoes(
+                  {},
+                );
+
+                router.replace(
+                  "/login",
+                );
+              } catch (erro) {
+                console.error(
+                  "Erro ao terminar sessão:",
+                  erro,
+                );
+              }
+            },
+          },
+        ],
+      );
+    }, [router]);
+
+  /*
+   * =========================================================
+   * ESTATÍSTICAS
+   * =========================================================
+   */
+
+  const estatisticas = useMemo(
+    () => [
+      {
+        label: "Publicações",
+        value:
+          publicacoesUsuario.length,
+      },
+      {
+        label: "Livros lidos",
+        value:
+          livrosLidos.length,
+      },
+    ],
+    [
+      publicacoesUsuario.length,
+      livrosLidos.length,
+    ],
+  );
+
+  /*
+   * =========================================================
+   * VAZIO
+   * =========================================================
+   */
+
+  const renderVazio =
+    useCallback(() => {
+      if (
+        aba === "publicacoes"
+      ) {
+        return (
           <View
             style={[
               styles.emptyCard,
               {
                 backgroundColor:
-                  theme.surface,
+                  colors.card,
                 borderColor:
-                  theme.border,
+                  colors.border,
               },
             ]}
           >
@@ -1426,30 +2105,29 @@ export default function Perfil() {
                 styles.emptyIcon,
                 {
                   backgroundColor:
-                    theme.blueSoft,
+                    colors.soft,
                 },
               ]}
             >
-              <MaterialCommunityIcons
-                name={
-                  aba === "livros"
-                    ? "book-open-page-variant"
-                    : "newspaper-variant-outline"
+              <LivroIcon
+                size={42}
+                color={colors.primary}
+                pageColor={
+                  colors.card
                 }
-                size={34}
-                color={theme.blue}
               />
             </View>
 
             <Text
               style={[
                 styles.emptyTitle,
-                { color: theme.text },
+                {
+                  color:
+                    colors.text,
+                },
               ]}
             >
-              {aba === "livros"
-                ? "Ainda não tens livros lidos"
-                : "Ainda não tens publicações"}
+              Ainda não há publicações
             </Text>
 
             <Text
@@ -1457,692 +2135,2679 @@ export default function Perfil() {
                 styles.emptyText,
                 {
                   color:
-                    theme.textSecondary,
+                    colors.secondary,
                 },
               ]}
             >
-              {aba === "livros"
-                ? "Os livros que marcares como lidos aparecerão aqui."
-                : "As tuas atividades e críticas aparecerão aqui."}
+              As suas publicações
+              aparecerão aqui quando
+              começar a partilhar com
+              a comunidade.
             </Text>
           </View>
-        }
-      />
+        );
+      }
 
-      {/* MODAL EDITAR PERFIL */}
-
-      <Modal
-        visible={modalEditar}
-        transparent
-        animationType="slide"
-        onRequestClose={() =>
-          setModalEditar(false)
-        }
-      >
+      return (
         <View
           style={[
-            styles.modalOverlay,
+            styles.emptyCard,
             {
               backgroundColor:
-                theme.overlay,
+                colors.card,
+              borderColor:
+                colors.border,
             },
           ]}
         >
           <View
             style={[
-              styles.editModal,
+              styles.emptyIcon,
               {
                 backgroundColor:
-                  theme.surface,
+                  colors.soft,
               },
             ]}
           >
-            <View style={styles.modalHeader}>
-              <Text
+            <LivroIcon
+              size={42}
+              color={colors.primary}
+              pageColor={
+                colors.card
+              }
+            />
+          </View>
+
+          <Text
+            style={[
+              styles.emptyTitle,
+              {
+                color:
+                  colors.text,
+              },
+            ]}
+          >
+            Nenhum livro lido
+          </Text>
+
+          <Text
+            style={[
+              styles.emptyText,
+              {
+                color:
+                  colors.secondary,
+              },
+            ]}
+          >
+            Os livros que marcar como
+            lidos aparecerão nesta
+            seção.
+          </Text>
+        </View>
+      );
+    }, [aba, colors]);
+
+  /*
+   * =========================================================
+   * PUBLICAÇÃO — ESTILO REDE SOCIAL
+   * =========================================================
+   */
+
+  const renderPublicacao =
+    useCallback(
+      ({
+        item,
+      }: {
+        item: Publicacao;
+      }) => {
+        const texto =
+          item.texto?.trim() ?? "";
+
+        const titulo =
+          item.titulo?.trim() ?? "";
+
+        const autor =
+          item.autor?.trim() ?? "";
+
+        const imagem =
+          item.imagem ?? null;
+
+        const criticaId =
+          Number(item.criticaId);
+
+        const possuiInteracao =
+          Number.isInteger(
+            criticaId,
+          );
+
+        const estatistica =
+          possuiInteracao
+            ? estatisticasPublicacoes[
+            String(criticaId)
+            ]
+            : undefined;
+
+        const quantidadeCurtidas =
+          estatistica?.curtidas ??
+          item.curtidas ??
+          0;
+
+        const quantidadeComentarios =
+          estatistica?.comentarios ??
+          item.comentarios ??
+          0;
+
+        const curtiu =
+          estatistica?.curtiu ??
+          item.curtiu ??
+          false;
+
+        const tipoNormalizado =
+          normalizarTexto(
+            item.tipo,
+          );
+
+        let legendaTipo =
+          "Partilha";
+
+        if (
+          tipoNormalizado.includes(
+            "critica",
+          ) ||
+          tipoNormalizado.includes(
+            "review",
+          )
+        ) {
+          legendaTipo =
+            "Crítica de livro";
+        } else if (
+          tipoNormalizado.includes(
+            "livro",
+          )
+        ) {
+          legendaTipo =
+            "Livro partilhado";
+        }
+
+        return (
+          <View
+            style={[
+              styles.publicacaoSocial,
+              {
+                backgroundColor:
+                  colors.card,
+                borderBottomColor:
+                  colors.border,
+              },
+            ]}
+          >
+            {/* CABEÇALHO */}
+
+            <View
+              style={
+                styles.publicacaoHeader
+              }
+            >
+              <View
                 style={[
-                  styles.modalTitle,
-                  { color: theme.text },
+                  styles.miniAvatarWrapper,
+                  {
+                    borderColor:
+                      colors.primary,
+                  },
                 ]}
               >
-                Editar perfil
-              </Text>
+                <Avatar
+                  size={42}
+                  foto={
+                    fotoLocal ??
+                    usuario?.foto_perfil ??
+                    null
+                  }
+                  nome={usuario?.nome}
+                  primaryDeep={
+                    colors.primaryDeep
+                  }
+                  white={
+                    colors.white
+                  }
+                />
+              </View>
+
+              <View
+                style={
+                  styles.publicacaoMeta
+                }
+              >
+                <Text
+                  style={[
+                    styles.publicacaoNome,
+                    {
+                      color:
+                        colors.text,
+                    },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {usuario?.nome ||
+                    "Utilizador"}
+                </Text>
+
+                <View
+                  style={
+                    styles.publicacaoDataRow
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.publicacaoLegenda,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    {legendaTipo}
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.publicacaoSeparator,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    ·
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.publicacaoLegenda,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    {formatarDataPublicacao(
+                      item.criado_em,
+                    )}
+                  </Text>
+
+                  <MaterialCommunityIcons
+                    name="earth"
+                    size={12}
+                    color={
+                      colors.secondary
+                    }
+                    style={{
+                      marginLeft: 4,
+                    }}
+                  />
+                </View>
+              </View>
 
               <TouchableOpacity
-                onPress={() =>
-                  setModalEditar(false)
+                activeOpacity={0.7}
+                style={
+                  styles.postMoreButton
                 }
               >
                 <MaterialCommunityIcons
-                  name="close"
-                  size={25}
-                  color={theme.textSecondary}
+                  name="dots-horizontal"
+                  size={21}
+                  color={
+                    colors.secondary
+                  }
                 />
               </TouchableOpacity>
             </View>
 
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              <View style={styles.editPhotoArea}>
+            {/* TEXTO */}
+
+            {!!texto && (
+              <Text
+                style={[
+                  styles.publicacaoTexto,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              >
+                {texto}
+              </Text>
+            )}
+
+            {/* LIVRO ASSOCIADO */}
+
+            {(!!titulo || !!autor) && (
+              <View
+                style={[
+                  styles.livroPublicacao,
+                  {
+                    backgroundColor:
+                      colors.cardSecondary,
+                    borderColor:
+                      colors.border,
+                  },
+                ]}
+              >
                 <View
                   style={[
-                    styles.editPhoto,
+                    styles.livroPublicacaoIcon,
                     {
                       backgroundColor:
-                        theme.surfaceSecondary,
+                        colors.primaryDeep,
                     },
                   ]}
                 >
-                  {renderAvatar(
-                    112,
-                    fotoEditada
-                  )}
+                  <LivroIcon
+                    size={32}
+                    color="#FFFFFF"
+                    pageColor={
+                      colors.primaryDeep
+                    }
+                  />
                 </View>
 
-                <TouchableOpacity
+                <View
+                  style={
+                    styles.livroPublicacaoInfo
+                  }
+                >
+                  {!!titulo && (
+                    <Text
+                      style={[
+                        styles.livroPublicacaoTitulo,
+                        {
+                          color:
+                            colors.text,
+                        },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {titulo}
+                    </Text>
+                  )}
+
+                  {!!autor && (
+                    <Text
+                      style={[
+                        styles.livroPublicacaoAutor,
+                        {
+                          color:
+                            colors.secondary,
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {autor}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* IMAGEM */}
+
+            {!!imagem && (
+              <Image
+                source={{
+                  uri: imagem,
+                }}
+                style={
+                  styles.publicacaoImagemSocial
+                }
+                resizeMode="cover"
+                fadeDuration={0}
+              />
+            )}
+
+            {/* ESTATÍSTICAS */}
+
+            {possuiInteracao &&
+              (quantidadeCurtidas > 0 ||
+                quantidadeComentarios >
+                0) && (
+                <View
                   style={[
-                    styles.changePhotoButton,
+                    styles.postStats,
                     {
-                      backgroundColor:
-                        theme.blueSoft,
+                      borderBottomColor:
+                        colors.border,
                     },
                   ]}
-                  onPress={escolherFoto}
+                >
+                  <View
+                    style={
+                      styles.postLikeSummary
+                    }
+                  >
+                    {quantidadeCurtidas >
+                      0 && (
+                        <View
+                          style={[
+                            styles.likeCircle,
+                            {
+                              backgroundColor:
+                                colors.primary,
+                            },
+                          ]}
+                        >
+                          <MaterialCommunityIcons
+                            name="heart"
+                            size={10}
+                            color="#FFFFFF"
+                          />
+                        </View>
+                      )}
+
+                    <Text
+                      style={[
+                        styles.postStatsText,
+                        {
+                          color:
+                            colors.secondary,
+                        },
+                      ]}
+                    >
+                      {quantidadeCurtidas >
+                        0
+                        ? `${quantidadeCurtidas} ${quantidadeCurtidas ===
+                          1
+                          ? "curtida"
+                          : "curtidas"
+                        }`
+                        : ""}
+                    </Text>
+                  </View>
+
+                  {quantidadeComentarios >
+                    0 && (
+                      <TouchableOpacity
+                        activeOpacity={
+                          0.7
+                        }
+                        onPress={() =>
+                          abrirComentarios(
+                            item,
+                          )
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.postStatsText,
+                            {
+                              color:
+                                colors.secondary,
+                            },
+                          ]}
+                        >
+                          {
+                            quantidadeComentarios
+                          }{" "}
+                          {quantidadeComentarios ===
+                            1
+                            ? "comentário"
+                            : "comentários"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                </View>
+              )}
+
+            {/* AÇÕES */}
+
+            {possuiInteracao && (
+              <View
+                style={[
+                  styles.postActions,
+                  {
+                    borderTopColor:
+                      colors.border,
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() =>
+                    void alternarCurtida(
+                      item,
+                    )
+                  }
+                  style={
+                    styles.postAction
+                  }
                 >
                   <MaterialCommunityIcons
-                    name="camera-outline"
-                    size={19}
-                    color={theme.blue}
+                    name={
+                      curtiu
+                        ? "heart"
+                        : "heart-outline"
+                    }
+                    size={22}
+                    color={
+                      curtiu
+                        ? colors.primary
+                        : colors.secondary
+                    }
                   />
 
                   <Text
                     style={[
-                      styles.changePhotoText,
+                      styles.postActionText,
                       {
                         color:
-                          theme.blue,
+                          curtiu
+                            ? colors.primary
+                            : colors.secondary,
                       },
                     ]}
                   >
-                    Alterar fotografia
+                    Curtir
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() =>
+                    void abrirComentarios(
+                      item,
+                    )
+                  }
+                  style={
+                    styles.postAction
+                  }
+                >
+                  <MaterialCommunityIcons
+                    name="comment-outline"
+                    size={21}
+                    color={
+                      colors.secondary
+                    }
+                  />
+
+                  <Text
+                    style={[
+                      styles.postActionText,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    Comentar
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        );
+      },
+      [
+        colors,
+        usuario,
+        fotoLocal,
+        estatisticasPublicacoes,
+        alternarCurtida,
+        abrirComentarios,
+      ],
+    );
+
+  /*
+   * =========================================================
+   * LIVRO
+   * =========================================================
+   */
+
+  const renderLivro =
+    useCallback(
+      ({
+        item,
+      }: {
+        item: LivroLido;
+      }) => {
+        const imagem =
+          item.imagem ?? null;
+
+        return (
+          <View
+            style={[
+              styles.livroCard,
+              {
+                backgroundColor:
+                  colors.card,
+                borderColor:
+                  colors.border,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.livroCapa,
+                {
+                  backgroundColor:
+                    colors.primaryDeep,
+                },
+              ]}
+            >
+              {imagem ? (
+                <Image
+                  source={{
+                    uri: imagem,
+                  }}
+                  style={
+                    styles.livroImagem
+                  }
+                  resizeMode="cover"
+                  fadeDuration={0}
+                />
+              ) : (
+                <>
+                  <LivroIcon
+                    size={48}
+                    color="#FFFFFF"
+                    pageColor={
+                      colors.primaryDeep
+                    }
+                  />
+
+                  <Text
+                    style={
+                      styles.livroBookText
+                    }
+                  >
+                    BOOK
+                  </Text>
+                </>
+              )}
+            </View>
+
+            <View
+              style={
+                styles.livroInfo
+              }
+            >
+              <Text
+                style={[
+                  styles.livroTitulo,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+                numberOfLines={2}
+              >
+                {item.titulo ||
+                  "Livro sem título"}
+              </Text>
+
+              <Text
+                style={[
+                  styles.livroAutor,
+                  {
+                    color:
+                      colors.secondary,
+                  },
+                ]}
+                numberOfLines={1}
+              >
+                {item.autor ||
+                  "Autor não informado"}
+              </Text>
+
+              <View
+                style={[
+                  styles.lidoBadge,
+                  {
+                    backgroundColor:
+                      colors.soft,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.lidoDot,
+                    {
+                      backgroundColor:
+                        colors.primary,
+                    },
+                  ]}
+                />
+
+                <Text
+                  style={[
+                    styles.lidoText,
+                    {
+                      color:
+                        colors.primaryDark,
+                    },
+                  ]}
+                >
+                  Lido
+                </Text>
+              </View>
+            </View>
+          </View>
+        );
+      },
+      [colors],
+    );
+
+  /*
+   * =========================================================
+   * DADOS ATUAIS
+   * =========================================================
+   */
+
+  const dadosAtuais =
+    aba === "publicacoes"
+      ? publicacoesUsuario
+      : livrosLidos;
+
+  /*
+   * =========================================================
+   * LOADING
+   * =========================================================
+   */
+
+  if (
+    carregando &&
+    !usuario
+  ) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.safeArea,
+          {
+            backgroundColor:
+              colors.background,
+          },
+        ]}
+        edges={[
+          "top",
+          "left",
+          "right",
+        ]}
+      >
+        <StatusBar
+          barStyle={
+            isDark
+              ? "light-content"
+              : "dark-content"
+          }
+          backgroundColor={
+            colors.background
+          }
+        />
+
+        <View
+          style={
+            styles.loadingPage
+          }
+        >
+          <View
+            style={[
+              styles.loadingIcon,
+              {
+                backgroundColor:
+                  colors.primaryDeep,
+              },
+            ]}
+          >
+            <LivroIcon
+              size={48}
+              color="#FFFFFF"
+              pageColor={
+                colors.primaryDeep
+              }
+            />
+          </View>
+
+          <ActivityIndicator
+            size="small"
+            color={
+              colors.primary
+            }
+          />
+
+          <Text
+            style={[
+              styles.loadingTitle,
+              {
+                color:
+                  colors.text,
+              },
+            ]}
+          >
+            A carregar o seu perfil
+          </Text>
+
+          <Text
+            style={[
+              styles.loadingSubtitle,
+              {
+                color:
+                  colors.secondary,
+              },
+            ]}
+          >
+            Estamos a preparar o
+            seu espaço.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+  return (
+    <SafeAreaView
+      style={[
+        styles.safeArea,
+        {
+          backgroundColor:
+            colors.background,
+        },
+      ]}
+      edges={[
+        "top",
+        "left",
+        "right",
+      ]}
+    >
+      <StatusBar
+        barStyle={
+          isDark
+            ? "light-content"
+            : "dark-content"
+        }
+        backgroundColor={
+          colors.background
+        }
+      />
+
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor:
+              colors.background,
+          },
+        ]}
+      >
+        {/* =================================================
+            TOP BAR
+        ================================================= */}
+
+        <View
+          style={styles.topBar}
+        >
+          <View>
+            <Text
+              style={[
+                styles.eyebrow,
+                {
+                  color:
+                    colors.primary,
+                },
+              ]}
+            >
+              MEU ESPAÇO
+            </Text>
+
+            <Text
+              style={[
+                styles.pageTitle,
+                {
+                  color:
+                    colors.text,
+                },
+              ]}
+            >
+              Meu perfil
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.menuButton,
+              {
+                backgroundColor:
+                  colors.card,
+                borderColor:
+                  colors.border,
+              },
+            ]}
+            onPress={() =>
+              setMenuVisible(true)
+            }
+            activeOpacity={0.8}
+          >
+            <View
+              style={[
+                styles.menuDot,
+                {
+                  backgroundColor:
+                    colors.text,
+                },
+              ]}
+            />
+
+            <View
+              style={[
+                styles.menuDot,
+                {
+                  backgroundColor:
+                    colors.text,
+                },
+              ]}
+            />
+
+            <View
+              style={[
+                styles.menuDot,
+                {
+                  backgroundColor:
+                    colors.text,
+                },
+              ]}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <FlatList
+          data={dadosAtuais as any[]}
+          keyExtractor={(
+            item,
+            index,
+          ) =>
+            `${aba}-${String(
+              item?.id ?? index,
+            )}`
+          }
+          renderItem={
+            aba === "publicacoes"
+              ? (renderPublicacao as any)
+              : (renderLivro as any)
+          }
+          showsVerticalScrollIndicator={
+            false
+          }
+          contentContainerStyle={
+            dadosAtuais.length === 0
+              ? styles.listEmptyContent
+              : styles.listContent
+          }
+          refreshControl={
+            <RefreshControl
+              refreshing={
+                atualizando
+              }
+              onRefresh={
+                atualizarPerfil
+              }
+              tintColor={
+                colors.primary
+              }
+              colors={[
+                colors.primary,
+              ]}
+            />
+          }
+          ListHeaderComponent={
+            <View>
+              {/* PERFIL */}
+
+              <View
+                style={[
+                  styles.profileCard,
+                  {
+                    backgroundColor:
+                      colors.card,
+                    borderColor:
+                      colors.border,
+                  },
+                ]}
+              >
+                <View
+                  style={
+                    styles.profileTop
+                  }
+                >
+                  <View
+                    style={[
+                      styles.avatarWrapper,
+                      {
+                        borderColor:
+                          colors.primary,
+                      },
+                    ]}
+                  >
+                    <Avatar
+                      size={94}
+                    />
+
+                    <View
+                      style={[
+                        styles.onlineBadge,
+                        {
+                          backgroundColor:
+                            colors.primary,
+                          borderColor:
+                            colors.card,
+                        },
+                      ]}
+                    />
+                  </View>
+
+                  <View
+                    style={
+                      styles.profileInfo
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.profileName,
+                        {
+                          color:
+                            colors.text,
+                        },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {usuario?.nome ||
+                        "Utilizador"}
+                    </Text>
+
+                    <Text
+                      style={[
+                        styles.profileRole,
+                        {
+                          color:
+                            colors.secondary,
+                        },
+                      ]}
+                    >
+                      Leitor BookNook
+                    </Text>
+
+                    <View
+                      style={[
+                        styles.activeBadge,
+                        {
+                          backgroundColor:
+                            colors.soft,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.activeDot,
+                          {
+                            backgroundColor:
+                              colors.primary,
+                          },
+                        ]}
+                      />
+
+                      <Text
+                        style={[
+                          styles.activeText,
+                          {
+                            color:
+                              colors.primaryDark,
+                          },
+                        ]}
+                      >
+                        Conta ativa
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View
+                  style={[
+                    styles.statsContainer,
+                    {
+                      borderTopColor:
+                        colors.border,
+                    },
+                  ]}
+                >
+                  {estatisticas.map(
+                    (
+                      estatistica,
+                      index,
+                    ) => (
+                      <View
+                        key={
+                          estatistica.label
+                        }
+                        style={[
+                          styles.statItem,
+                          index !==
+                          estatisticas.length -
+                          1 && {
+                            borderRightWidth: 1,
+                            borderRightColor:
+                              colors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statValue,
+                            {
+                              color:
+                                colors.text,
+                            },
+                          ]}
+                        >
+                          {
+                            estatistica.value
+                          }
+                        </Text>
+
+                        <Text
+                          style={[
+                            styles.statLabel,
+                            {
+                              color:
+                                colors.secondary,
+                            },
+                          ]}
+                        >
+                          {
+                            estatistica.label
+                          }
+                        </Text>
+                      </View>
+                    ),
+                  )}
+                </View>
+              </View>
+
+              {/* ABAS */}
+
+              <View
+                style={[
+                  styles.tabsContainer,
+                  {
+                    backgroundColor:
+                      colors.card,
+                    borderColor:
+                      colors.border,
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() =>
+                    setAba(
+                      "publicacoes",
+                    )
+                  }
+                  style={[
+                    styles.tab,
+                    aba ===
+                    "publicacoes" && {
+                      backgroundColor:
+                        colors.soft,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.tabIcon,
+                      {
+                        backgroundColor:
+                          aba ===
+                            "publicacoes"
+                            ? colors.primary
+                            : colors.muted,
+                      },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="post-outline"
+                      size={21}
+                      color={
+                        aba ===
+                          "publicacoes"
+                          ? "#FFFFFF"
+                          : colors.secondary
+                      }
+                    />
+                  </View>
+
+                  <Text
+                    style={[
+                      styles.tabText,
+                      {
+                        color:
+                          aba ===
+                            "publicacoes"
+                            ? colors.primary
+                            : colors.secondary,
+                      },
+                    ]}
+                  >
+                    Publicações
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() =>
+                    setAba("lidos")
+                  }
+                  style={[
+                    styles.tab,
+                    aba === "lidos" && {
+                      backgroundColor:
+                        colors.soft,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.tabIcon,
+                      {
+                        backgroundColor:
+                          aba ===
+                            "lidos"
+                            ? colors.primary
+                            : colors.muted,
+                      },
+                    ]}
+                  >
+                    <LivroIcon
+                      size={26}
+                      color={
+                        aba ===
+                          "lidos"
+                          ? "#FFFFFF"
+                          : colors.secondary
+                      }
+                      pageColor={
+                        aba ===
+                          "lidos"
+                          ? colors.primary
+                          : colors.muted
+                      }
+                    />
+                  </View>
+
+                  <Text
+                    style={[
+                      styles.tabText,
+                      {
+                        color:
+                          aba ===
+                            "lidos"
+                            ? colors.primary
+                            : colors.secondary,
+                      },
+                    ]}
+                  >
+                    Livros lidos
                   </Text>
                 </TouchableOpacity>
               </View>
 
-              <Text
-                style={[
-                  styles.inputLabel,
-                  { color: theme.text },
-                ]}
-              >
-                Nome
-              </Text>
+              {/* TÍTULO */}
 
-              <TextInput
-                value={nomeEditado}
-                onChangeText={setNomeEditado}
-                placeholder="O teu nome"
-                placeholderTextColor={
-                  theme.muted
-                }
-                style={[
-                  styles.input,
-                  {
-                    color: theme.text,
-                    backgroundColor:
-                      theme.input,
-                    borderColor:
-                      theme.border,
-                  },
-                ]}
-                autoCapitalize="words"
-              />
-
-              <TouchableOpacity
-                style={[
-                  styles.saveButton,
-                  {
-                    backgroundColor:
-                      theme.blue,
-                  },
-                ]}
-                onPress={salvarPerfil}
-              >
-                <MaterialCommunityIcons
-                  name="content-save-outline"
-                  size={20}
-                  color="#FFFFFF"
-                />
-
-                <Text
-                  style={
-                    styles.saveButtonText
-                  }
-                >
-                  Guardar alterações
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.cancelButton,
-                  {
-                    borderColor:
-                      theme.border,
-                  },
-                ]}
-                onPress={() =>
-                  setModalEditar(false)
-                }
-              >
-                <Text
-                  style={[
-                    styles.cancelButtonText,
-                    {
-                      color:
-                        theme.text,
-                    },
-                  ]}
-                >
-                  Cancelar
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL COMENTÁRIOS */}
-
-      <Modal
-        visible={modalComentarios}
-        transparent
-        animationType="slide"
-        onRequestClose={() =>
-          setModalComentarios(false)
-        }
-      >
-        <View
-          style={[
-            styles.modalOverlay,
-            {
-              backgroundColor:
-                theme.overlay,
-            },
-          ]}
-        >
-          <View
-            style={[
-              styles.commentsModal,
-              {
-                backgroundColor:
-                  theme.surface,
-              },
-            ]}
-          >
-            <View style={styles.modalHeader}>
-              <Text
-                style={[
-                  styles.modalTitle,
-                  { color: theme.text },
-                ]}
-              >
-                Comentários
-              </Text>
-
-              <TouchableOpacity
-                onPress={() =>
-                  setModalComentarios(false)
-                }
-              >
-                <MaterialCommunityIcons
-                  name="close"
-                  size={25}
-                  color={theme.textSecondary}
-                />
-              </TouchableOpacity>
-            </View>
-
-            {carregandoComentarios ? (
               <View
                 style={
-                  styles.commentsLoading
+                  styles.sectionHeader
                 }
               >
-                <ActivityIndicator
-                  size="large"
-                  color={theme.blue}
-                />
+                <View>
+                  <Text
+                    style={[
+                      styles.sectionTitle,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  >
+                    {aba ===
+                      "publicacoes"
+                      ? "As minhas publicações"
+                      : "A minha biblioteca"}
+                  </Text>
 
-                <Text
+                  <Text
+                    style={[
+                      styles.sectionSubtitle,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    {aba ===
+                      "publicacoes"
+                      ? "Partilhas feitas por si."
+                      : "Livros que já terminou de ler."}
+                  </Text>
+                </View>
+
+                <View
                   style={[
-                    styles.loadingText,
+                    styles.countBadge,
                     {
-                      color:
-                        theme.textSecondary,
+                      backgroundColor:
+                        colors.soft,
                     },
                   ]}
                 >
-                  A carregar comentários...
-                </Text>
+                  <Text
+                    style={[
+                      styles.countBadgeText,
+                      {
+                        color:
+                          colors.primaryDark,
+                      },
+                    ]}
+                  >
+                    {
+                      dadosAtuais.length
+                    }
+                  </Text>
+                </View>
               </View>
-            ) : (
-              <>
+            </View>
+          }
+          ListEmptyComponent={
+            renderVazio
+          }
+          ListFooterComponent={
+            dadosAtuais.length > 0 ? (
+              <View
+                style={
+                  styles.listFooter
+                }
+              />
+            ) : null
+          }
+        />
+
+        {/* ===================================================
+            MENU
+        ==================================================== */}
+
+        <Modal
+          transparent
+          visible={
+            menuVisible
+          }
+          animationType="fade"
+          onRequestClose={() =>
+            setMenuVisible(false)
+          }
+          statusBarTranslucent
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={
+              styles.modalOverlay
+            }
+            onPress={() =>
+              setMenuVisible(false)
+            }
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              style={[
+                styles.menuModal,
+                {
+                  backgroundColor:
+                    colors.card,
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.menuModalHandle,
+                  {
+                    backgroundColor:
+                      colors.border,
+                  },
+                ]}
+              />
+
+              <Text
+                style={[
+                  styles.menuModalTitle,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              >
+                Configurações do perfil
+              </Text>
+
+              <TouchableOpacity
+                style={[
+                  styles.menuItem,
+                  {
+                    backgroundColor:
+                      colors.cardSecondary,
+                  },
+                ]}
+                onPress={
+                  abrirEdicao
+                }
+                activeOpacity={0.8}
+              >
+                <View
+                  style={[
+                    styles.menuItemIcon,
+                    {
+                      backgroundColor:
+                        colors.soft,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="account-edit-outline"
+                    size={22}
+                    color={
+                      colors.primary
+                    }
+                  />
+                </View>
+
+                <View
+                  style={
+                    styles.menuItemInfo
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.menuItemTitle,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  >
+                    Editar perfil
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.menuItemSubtitle,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    Alterar nome e foto
+                  </Text>
+                </View>
+
+                <Text
+                  style={[
+                    styles.menuArrow,
+                    {
+                      color:
+                        colors.secondary,
+                    },
+                  ]}
+                >
+                  ›
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.menuItem,
+                  {
+                    backgroundColor:
+                      colors.dangerSoft,
+                  },
+                ]}
+                onPress={
+                  terminarSessao
+                }
+                activeOpacity={0.8}
+              >
+                <View
+                  style={[
+                    styles.menuItemIcon,
+                    {
+                      backgroundColor:
+                        colors.card,
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="logout"
+                    size={21}
+                    color={
+                      colors.danger
+                    }
+                  />
+                </View>
+
+                <View
+                  style={
+                    styles.menuItemInfo
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.menuItemTitle,
+                      {
+                        color:
+                          colors.danger,
+                      },
+                    ]}
+                  >
+                    Terminar sessão
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.menuItemSubtitle,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    Sair desta conta
+                  </Text>
+                </View>
+
+                <Text
+                  style={[
+                    styles.menuArrow,
+                    {
+                      color:
+                        colors.danger,
+                    },
+                  ]}
+                >
+                  ›
+                </Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* ===================================================
+            COMENTÁRIOS
+        ==================================================== */}
+
+        <Modal
+          transparent
+          visible={
+            comentariosVisible
+          }
+          animationType="slide"
+          onRequestClose={
+            fecharComentarios
+          }
+          statusBarTranslucent
+        >
+          <KeyboardAvoidingView
+            style={
+              styles.commentsOverlay
+            }
+            behavior={
+              Platform.OS === "ios"
+                ? "padding"
+                : undefined
+            }
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              style={
+                styles.commentsBackground
+              }
+              onPress={
+                fecharComentarios
+              }
+            />
+
+            <View
+              style={[
+                styles.commentsSheet,
+                {
+                  backgroundColor:
+                    colors.card,
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.commentsHandle,
+                  {
+                    backgroundColor:
+                      colors.border,
+                  },
+                ]}
+              />
+
+              <View
+                style={
+                  styles.commentsHeader
+                }
+              >
+                <View>
+                  <Text
+                    style={[
+                      styles.commentsTitle,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  >
+                    Comentários
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.commentsSubtitle,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    {comentariosLista.length}{" "}
+                    {comentariosLista.length ===
+                      1
+                      ? "comentário"
+                      : "comentários"}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.commentsClose,
+                    {
+                      backgroundColor:
+                        colors.soft,
+                    },
+                  ]}
+                  onPress={
+                    fecharComentarios
+                  }
+                  disabled={
+                    enviandoComentario
+                  }
+                >
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={20}
+                    color={
+                      colors.text
+                    }
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {publicacaoSelecionada &&
+                !!publicacaoSelecionada
+                  .texto && (
+                  <View
+                    style={[
+                      styles.commentPostPreview,
+                      {
+                        backgroundColor:
+                          colors.cardSecondary,
+                        borderColor:
+                          colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.commentPostPreviewText,
+                        {
+                          color:
+                            colors.text,
+                        },
+                      ]}
+                      numberOfLines={3}
+                    >
+                      {
+                        publicacaoSelecionada.texto
+                      }
+                    </Text>
+                  </View>
+                )}
+
+              {carregandoComentarios ? (
+                <View
+                  style={
+                    styles.commentsLoading
+                  }
+                >
+                  <ActivityIndicator
+                    size="small"
+                    color={
+                      colors.primary
+                    }
+                  />
+
+                  <Text
+                    style={[
+                      styles.commentsLoadingText,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    A carregar comentários...
+                  </Text>
+                </View>
+              ) : comentariosLista.length ===
+                0 ? (
+                <View
+                  style={
+                    styles.noComments
+                  }
+                >
+                  <View
+                    style={[
+                      styles.noCommentsIcon,
+                      {
+                        backgroundColor:
+                          colors.soft,
+                      },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="comment-outline"
+                      size={27}
+                      color={
+                        colors.primary
+                      }
+                    />
+                  </View>
+
+                  <Text
+                    style={[
+                      styles.noCommentsTitle,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  >
+                    Ainda não há comentários
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.noCommentsText,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    Seja o primeiro a
+                    comentar esta publicação.
+                  </Text>
+                </View>
+              ) : (
                 <FlatList
-                  data={comentarios}
-                  keyExtractor={(item) =>
-                    String(item.id)
+                  data={
+                    comentariosLista
+                  }
+                  keyExtractor={(
+                    item,
+                  ) =>
+                    String(
+                      item.id,
+                    )
                   }
                   showsVerticalScrollIndicator={
                     false
                   }
                   contentContainerStyle={
-                    comentarios.length === 0
-                      ? styles.emptyComments
-                      : styles.commentsList
+                    styles.commentsList
                   }
                   renderItem={({
                     item,
-                  }) => (
-                    <View
-                      style={
-                        styles.commentRow
-                      }
-                    >
-                      {renderAvatar(
-                        40,
-                        item.usuario
-                          ?.foto_perfil
-                      )}
+                  }) => {
+                    const nome =
+                      item.usuario
+                        ?.nome ||
+                      "Utilizador";
 
+                    const foto =
+                      item.usuario
+                        ?.foto_perfil ??
+                      null;
+
+                    return (
                       <View
-                        style={[
-                          styles.commentBubble,
-                          {
-                            backgroundColor:
-                              theme.input,
-                          },
-                        ]}
+                        style={
+                          styles.commentItem
+                        }
                       >
-                        <Text
-                          style={[
-                            styles.commentName,
-                            {
-                              color:
-                                theme.text,
-                            },
-                          ]}
-                        >
-                          {item.usuario
-                            ?.nome ??
-                            "Utilizador"}
-                        </Text>
+                        {foto ? (
+                          <Image
+                            source={{
+                              uri: foto,
+                            }}
+                            style={
+                              styles.commentAvatar
+                            }
+                          />
+                        ) : (
+                          <View
+                            style={[
+                              styles.commentAvatar,
+                              styles.commentAvatarFallback,
+                              {
+                                backgroundColor:
+                                  colors.primaryDeep,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={
+                                styles.commentAvatarLetter
+                              }
+                            >
+                              {nome
+                                .charAt(
+                                  0,
+                                )
+                                .toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
 
-                        <Text
+                        <View
                           style={[
-                            styles.commentText,
+                            styles.commentBubble,
                             {
-                              color:
-                                theme.text,
+                              backgroundColor:
+                                colors.cardSecondary,
                             },
                           ]}
                         >
-                          {item.texto}
-                        </Text>
+                          <View
+                            style={
+                              styles.commentAuthorRow
+                            }
+                          >
+                            <Text
+                              style={[
+                                styles.commentAuthor,
+                                {
+                                  color:
+                                    colors.text,
+                                },
+                              ]}
+                            >
+                              {nome}
+                            </Text>
+
+                            <Text
+                              style={[
+                                styles.commentDate,
+                                {
+                                  color:
+                                    colors.secondary,
+                                },
+                              ]}
+                            >
+                              {formatarDataPublicacao(
+                                item.createdAt,
+                              )}
+                            </Text>
+                          </View>
+
+                          <Text
+                            style={[
+                              styles.commentText,
+                              {
+                                color:
+                                  colors.text,
+                              },
+                            ]}
+                          >
+                            {item.texto}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                  )}
-                  ListEmptyComponent={
-                    <View
+                    );
+                  }}
+                />
+              )}
+
+              {/* CAMPO DE COMENTÁRIO */}
+
+              <View
+                style={[
+                  styles.commentInputArea,
+                  {
+                    borderTopColor:
+                      colors.border,
+                    backgroundColor:
+                      colors.card,
+                  },
+                ]}
+              >
+                {usuario?.foto_perfil ? (
+                  <Image
+                    source={{
+                      uri: usuario.foto_perfil,
+                    }}
+                    style={
+                      styles.inputAvatar
+                    }
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.inputAvatar,
+                      {
+                        backgroundColor:
+                          colors.primaryDeep,
+                      },
+                    ]}
+                  >
+                    <Text
                       style={
-                        styles.emptyCommentsInner
+                        styles.inputAvatarLetter
                       }
                     >
-                      <MaterialCommunityIcons
-                        name="comment-outline"
-                        size={42}
-                        color={theme.muted}
-                      />
+                      {(
+                        usuario?.nome?.charAt(
+                          0,
+                        ) || "U"
+                      ).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
 
-                      <Text
-                        style={[
-                          styles.emptyCommentsTitle,
-                          {
-                            color:
-                              theme.text,
-                          },
-                        ]}
-                      >
-                        Ainda não existem comentários
-                      </Text>
-
-                      <Text
-                        style={[
-                          styles.emptyCommentsText,
-                          {
-                            color:
-                              theme.textSecondary,
-                          },
-                        ]}
-                      >
-                        Sê o primeiro a comentar esta publicação.
-                      </Text>
-                    </View>
+                <TextInput
+                  value={
+                    comentarioTexto
                   }
+                  onChangeText={
+                    setComentarioTexto
+                  }
+                  placeholder="Escreva um comentário..."
+                  placeholderTextColor={
+                    colors.secondary
+                  }
+                  multiline
+                  editable={
+                    !enviandoComentario
+                  }
+                  style={[
+                    styles.commentInput,
+                    {
+                      backgroundColor:
+                        colors.input,
+                      borderColor:
+                        colors.border,
+                      color:
+                        colors.text,
+                    },
+                  ]}
                 />
-              </>
-            )}
+
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() =>
+                    void enviarComentario()
+                  }
+                  disabled={
+                    enviandoComentario ||
+                    !comentarioTexto.trim()
+                  }
+                  style={[
+                    styles.sendCommentButton,
+                    {
+                      backgroundColor:
+                        colors.primary,
+                    },
+                    (!comentarioTexto.trim() ||
+                      enviandoComentario) &&
+                    styles.sendCommentDisabled,
+                  ]}
+                >
+                  {enviandoComentario ? (
+                    <ActivityIndicator
+                      size="small"
+                      color="#FFFFFF"
+                    />
+                  ) : (
+                    <MaterialCommunityIcons
+                      name="send"
+                      size={19}
+                      color="#FFFFFF"
+                    />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* ===================================================
+            EDITAR PERFIL
+        ==================================================== */}
+
+        <Modal
+          transparent
+          visible={
+            editModalVisible
+          }
+          animationType="slide"
+          onRequestClose={() => {
+            if (!salvando) {
+              setEditModalVisible(
+                false,
+              );
+            }
+          }}
+          statusBarTranslucent
+        >
+          <KeyboardAvoidingView
+            style={
+              styles.editOverlay
+            }
+            behavior={
+              Platform.OS === "ios"
+                ? "padding"
+                : undefined
+            }
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              style={
+                styles.editBackground
+              }
+              onPress={() => {
+                if (!salvando) {
+                  setEditModalVisible(
+                    false,
+                  );
+                }
+              }}
+            />
 
             <View
               style={[
-                styles.commentComposer,
+                styles.editSheet,
                 {
-                  borderTopColor:
-                    theme.border,
                   backgroundColor:
-                    theme.surface,
+                    colors.card,
+                  borderColor:
+                    colors.border,
                 },
               ]}
             >
-              <TextInput
-                value={novoComentario}
-                onChangeText={
-                  setNovoComentario
-                }
-                placeholder="Escreve um comentário..."
-                placeholderTextColor={
-                  theme.muted
-                }
+              <View
                 style={[
-                  styles.commentInput,
+                  styles.sheetHandle,
                   {
-                    color: theme.text,
                     backgroundColor:
-                      theme.input,
-                    borderColor:
-                      theme.border,
+                      colors.border,
                   },
                 ]}
-                multiline
               />
 
-              <TouchableOpacity
-                style={[
-                  styles.sendCommentButton,
-                  {
-                    backgroundColor:
-                      novoComentario.trim()
-                        ? theme.blue
-                        : theme.border,
-                  },
-                ]}
-                disabled={
-                  enviandoComentario ||
-                  !novoComentario.trim()
-                }
-                onPress={
-                  enviarComentario
+              <View
+                style={
+                  styles.editHeader
                 }
               >
-                {enviandoComentario ? (
+                <View>
+                  <Text
+                    style={[
+                      styles.editTitle,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  >
+                    Editar perfil
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.editSubtitle,
+                      {
+                        color:
+                          colors.secondary,
+                      },
+                    ]}
+                  >
+                    Atualize os dados da sua conta.
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.closeButton,
+                    {
+                      backgroundColor:
+                        colors.soft,
+                    },
+                  ]}
+                  onPress={() => {
+                    if (!salvando) {
+                      setEditModalVisible(
+                        false,
+                      );
+                    }
+                  }}
+                  disabled={
+                    salvando
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.closeButtonText,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
+                  >
+                    ×
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View
+                style={
+                  styles.photoSection
+                }
+              >
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={
+                    selecionarFoto
+                  }
+                  disabled={
+                    salvando ||
+                    selecionandoFoto
+                  }
+                  style={[
+                    styles.editAvatarWrapper,
+                    {
+                      borderColor:
+                        colors.primary,
+                    },
+                  ]}
+                >
+                  <Avatar
+                    size={108}
+                  />
+
+                  <View
+                    style={[
+                      styles.cameraBadge,
+                      {
+                        backgroundColor:
+                          colors.primary,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={
+                        styles.cameraBadgeText
+                      }
+                    >
+                      +
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={
+                    selecionarFoto
+                  }
+                  disabled={
+                    salvando ||
+                    selecionandoFoto
+                  }
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.changePhotoText,
+                      {
+                        color:
+                          colors.primary,
+                      },
+                    ]}
+                  >
+                    {selecionandoFoto
+                      ? "A selecionar..."
+                      : "Alterar foto de perfil"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View
+                style={
+                  styles.editField
+                }
+              >
+                <Text
+                  style={[
+                    styles.editLabel,
+                    {
+                      color:
+                        colors.text,
+                    },
+                  ]}
+                >
+                  Nome
+                </Text>
+
+                <TextInput
+                  value={novoNome}
+                  onChangeText={
+                    setNovoNome
+                  }
+                  placeholder="Digite o seu nome"
+                  placeholderTextColor={
+                    colors.secondary
+                  }
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  editable={!salvando}
+                  returnKeyType="done"
+                  style={[
+                    styles.editInput,
+                    {
+                      backgroundColor:
+                        colors.input,
+                      borderColor:
+                        colors.border,
+                      color:
+                        colors.text,
+                    },
+                  ]}
+                />
+              </View>
+
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={
+                  salvarPerfil
+                }
+                disabled={
+                  salvando
+                }
+                style={[
+                  styles.saveButton,
+                  {
+                    backgroundColor:
+                      colors.primary,
+                  },
+                  salvando &&
+                  styles.saveButtonDisabled,
+                ]}
+              >
+                {salvando ? (
                   <ActivityIndicator
                     size="small"
                     color="#FFFFFF"
                   />
                 ) : (
-                  <MaterialCommunityIcons
-                    name="send"
-                    size={20}
-                    color="#FFFFFF"
-                  />
+                  <Text
+                    style={
+                      styles.saveButtonText
+                    }
+                  >
+                    Guardar alterações
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+          </KeyboardAvoidingView>
+        </Modal>
+      </View>
     </SafeAreaView>
   );
 }
+
+/* ===========================================================
+   ESTILOS
+=========================================================== */
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
 
-  header: {
-    minHeight: 58,
-    paddingHorizontal: 16,
+  container: {
+    flex: 1,
+  },
+
+  topBar: {
+    minHeight: 76,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
 
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "800",
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    marginBottom: 3,
   },
 
-  headerActions: {
-    flexDirection: "row",
-    gap: 9,
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: "900",
+    letterSpacing: -0.6,
   },
 
-  headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  menuButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+    flexDirection: "row",
+    gap: 4,
+  },
+
+  menuDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
   },
 
   listContent: {
-    paddingBottom: 35,
+    paddingHorizontal: 16,
+    paddingBottom: 30,
+  },
+
+  listEmptyContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 30,
   },
 
   profileCard: {
-    marginBottom: 10,
+    borderRadius: 25,
     borderWidth: 1,
     overflow: "hidden",
+    marginBottom: 14,
   },
 
-  coverHeader: {
-    height: 105,
-  },
-
-  profileMain: {
+  profileTop: {
+    padding: 20,
+    flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 18,
-    paddingBottom: 20,
   },
 
-  profileAvatarWrapper: {
-    padding: 4,
-    borderRadius: 60,
-    marginTop: -56,
+  avatarWrapper: {
+    width: 102,
+    height: 102,
+    borderRadius: 51,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 2,
   },
 
-  avatarPlaceholder: {
+  avatarImage: {
+    backgroundColor: "#E7F1EA",
+  },
+
+  avatarFallback: {
     alignItems: "center",
     justifyContent: "center",
   },
 
-  avatarInitial: {
+  avatarLetter: {
     color: "#FFFFFF",
-    fontWeight: "800",
+    fontWeight: "900",
+  },
+
+  onlineBadge: {
+    position: "absolute",
+    width: 17,
+    height: 17,
+    borderRadius: 9,
+    right: 3,
+    bottom: 8,
+    borderWidth: 3,
+  },
+
+  profileInfo: {
+    flex: 1,
+    marginLeft: 17,
   },
 
   profileName: {
-    marginTop: 10,
-    fontSize: 24,
-    fontWeight: "800",
-    textAlign: "center",
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: -0.3,
   },
 
-  profileSubtitle: {
-    marginTop: 4,
+  profileRole: {
     fontSize: 14,
-    textAlign: "center",
+    marginTop: 4,
+    fontWeight: "600",
   },
 
-  profileStats: {
-    width: "100%",
-    marginTop: 20,
-    paddingTop: 17,
-    borderTopWidth: StyleSheet.hairlineWidth,
+  activeBadge: {
     flexDirection: "row",
-    justifyContent: "center",
-  },
-
-  profileStat: {
-    minWidth: 125,
     alignItems: "center",
+    alignSelf: "flex-start",
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 9,
+    marginTop: 10,
   },
 
-  profileStatNumber: {
-    fontSize: 20,
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+
+  activeText: {
+    fontSize: 11,
     fontWeight: "800",
   },
 
-  profileStatLabel: {
-    marginTop: 3,
-    fontSize: 13,
-  },
-
-  profileStatDivider: {
-    width: 1,
-    height: 35,
-  },
-
-  tabs: {
+  statsContainer: {
+    borderTopWidth: 1,
     flexDirection: "row",
+  },
+
+  statItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 15,
+  },
+
+  statValue: {
+    fontSize: 20,
+    fontWeight: "900",
+  },
+
+  statLabel: {
+    fontSize: 11,
+    marginTop: 3,
+    fontWeight: "600",
+  },
+
+  tabsContainer: {
+    minHeight: 66,
+    borderRadius: 18,
     borderWidth: 1,
-    marginBottom: 10,
+    padding: 5,
+    flexDirection: "row",
+    marginBottom: 22,
   },
 
   tab: {
     flex: 1,
-    minHeight: 53,
+    borderRadius: 14,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
+    paddingHorizontal: 7,
     gap: 8,
-    borderBottomWidth: 3,
-    borderBottomColor: "transparent",
   },
 
-  tabActive: {
-    fontWeight: "700",
+  tabIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   tabText: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "800",
   },
 
-  card: {
-    marginBottom: 10,
-    borderWidth: 1,
-    paddingTop: 14,
-    paddingHorizontal: 15,
-    paddingBottom: 4,
-  },
-
-  postHeader: {
+  sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 13,
   },
 
-  postHeaderInfo: {
-    flex: 1,
-    marginLeft: 10,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "900",
   },
 
-  postUserName: {
-    fontSize: 15,
-    fontWeight: "800",
-  },
-
-  postDate: {
-    marginTop: 2,
+  sectionSubtitle: {
     fontSize: 12,
+    marginTop: 3,
   },
 
-  bookPost: {
-    flexDirection: "row",
-    borderWidth: 1,
-    padding: 11,
-    borderRadius: 10,
-    marginBottom: 12,
-  },
-
-  bookCover: {
-    width: 67,
-    height: 96,
-    borderRadius: 6,
-  },
-
-  bookCoverPlaceholder: {
-    width: 67,
-    height: 96,
-    borderRadius: 6,
+  countBadge: {
+    minWidth: 35,
+    height: 35,
+    paddingHorizontal: 9,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  bookPostInfo: {
-    flex: 1,
-    paddingLeft: 12,
+  countBadgeText: {
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  /* =========================================================
+     PUBLICAÇÕES — VISUAL SOCIAL
+  ========================================================= */
+
+  publicacaoSocial: {
+    marginHorizontal: -16,
+    paddingHorizontal: 16,
+    paddingTop: 15,
+    paddingBottom: 3,
+    borderBottomWidth: 1,
+    marginBottom: 0,
+  },
+
+  publicacaoHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  miniAvatarWrapper: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1.5,
+    alignItems: "center",
     justifyContent: "center",
   },
 
-  bookPostLabel: {
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.6,
-    marginBottom: 5,
-  },
-
-  bookPostTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    lineHeight: 22,
-  },
-
-  bookPostAuthor: {
-    marginTop: 5,
-    fontSize: 13,
-  },
-
-  reviewBox: {
-    padding: 14,
-    borderRadius: 10,
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 10,
-  },
-
-  reviewText: {
+  publicacaoMeta: {
     flex: 1,
+    marginLeft: 11,
+  },
+
+  publicacaoNome: {
     fontSize: 14,
-    lineHeight: 21,
+    fontWeight: "800",
+  },
+
+  publicacaoDataRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+  },
+
+  publicacaoLegenda: {
+    fontSize: 11,
+  },
+
+  publicacaoSeparator: {
+    fontSize: 11,
+    marginHorizontal: 4,
+  },
+
+  postMoreButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 18,
+  },
+
+  publicacaoTexto: {
+    fontSize: 15,
+    lineHeight: 23,
+    marginTop: 13,
+    marginBottom: 11,
+  },
+
+  livroPublicacao: {
+    minHeight: 74,
+    borderWidth: 1,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 8,
+    marginBottom: 11,
+  },
+
+  livroPublicacaoIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  livroPublicacaoInfo: {
+    flex: 1,
+    marginLeft: 11,
+  },
+
+  livroPublicacaoTitulo: {
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 19,
+  },
+
+  livroPublicacaoAutor: {
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 3,
+  },
+
+  publicacaoImagemSocial: {
+    width: "100%",
+    height: 260,
+    marginHorizontal: 0,
+    backgroundColor: "#E7F1EA",
   },
 
   postStats: {
-    minHeight: 38,
+    minHeight: 39,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    flexDirection: "row",
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
   },
 
-  likeCount: {
+  postLikeSummary: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
   },
 
   likeCircle: {
@@ -2151,19 +4816,24 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 6,
   },
 
-  statText: {
-    fontSize: 12,
+  postStatsText: {
+    fontSize: 11,
+    fontWeight: "600",
   },
 
   postActions: {
+    minHeight: 48,
+    borderTopWidth: 0,
     flexDirection: "row",
-    minHeight: 44,
+    alignItems: "center",
   },
 
   postAction: {
     flex: 1,
+    height: 44,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -2171,209 +4841,300 @@ const styles = StyleSheet.create({
   },
 
   postActionText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-
-  bookCard: {
-    marginBottom: 10,
-    padding: 12,
-    borderWidth: 1,
-    flexDirection: "row",
-  },
-
-  libraryCover: {
-    width: 84,
-    height: 120,
-    borderRadius: 7,
-  },
-
-  libraryCoverPlaceholder: {
-    width: 84,
-    height: 120,
-    borderRadius: 7,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  libraryInfo: {
-    flex: 1,
-    paddingLeft: 13,
-    justifyContent: "center",
-  },
-
-  libraryTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    lineHeight: 21,
-  },
-
-  libraryAuthor: {
-    marginTop: 5,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-
-  readBadge: {
-    alignSelf: "flex-start",
-    marginTop: 11,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-
-  readBadgeText: {
     fontSize: 12,
     fontWeight: "800",
   },
 
-  emptyCard: {
-    margin: 10,
-    padding: 30,
+  /* =========================================================
+     LIVROS
+  ========================================================= */
+
+  livroCard: {
+    borderRadius: 20,
     borderWidth: 1,
+    padding: 12,
+    marginBottom: 12,
+    flexDirection: "row",
+    minHeight: 142,
+  },
+
+  livroCapa: {
+    width: 88,
+    minHeight: 118,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+
+  livroImagem: {
+    width: "100%",
+    height: "100%",
+    position: "absolute",
+  },
+
+  livroBookText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    marginTop: 4,
+    opacity: 0.9,
+  },
+
+  livroInfo: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+  },
+
+  livroTitulo: {
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: "900",
+  },
+
+  livroAutor: {
+    fontSize: 12,
+    marginTop: 5,
+    fontWeight: "600",
+  },
+
+  lidoBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    borderRadius: 9,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginTop: 12,
+  },
+
+  lidoDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+
+  lidoText: {
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  /* =========================================================
+     VAZIO
+  ========================================================= */
+
+  emptyCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 27,
     alignItems: "center",
   },
 
   emptyIcon: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 78,
+    height: 78,
+    borderRadius: 25,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 15,
+    marginBottom: 17,
   },
 
   emptyTitle: {
     fontSize: 17,
-    fontWeight: "800",
+    fontWeight: "900",
     textAlign: "center",
   },
 
   emptyText: {
-    marginTop: 7,
     fontSize: 13,
     lineHeight: 20,
     textAlign: "center",
-    maxWidth: 300,
+    marginTop: 7,
+    maxWidth: 310,
   },
 
-  loadingContainer: {
+  listFooter: {
+    height: 20,
+  },
+
+  /* =========================================================
+     LOADING
+  ========================================================= */
+
+  loadingPage: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 30,
+  },
+
+  loadingIcon: {
+    width: 82,
+    height: 82,
+    borderRadius: 27,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+  },
+
+  loadingTitle: {
+    fontSize: 17,
+    fontWeight: "900",
+    marginTop: 15,
+  },
+
+  loadingSubtitle: {
+    fontSize: 13,
+    marginTop: 6,
+    textAlign: "center",
+  },
+
+  /* =========================================================
+     MENU
+  ========================================================= */
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor:
+      "rgba(0,0,0,0.48)",
+    justifyContent: "flex-end",
+  },
+
+  menuModal: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom:
+      Platform.OS === "ios"
+        ? 34
+        : 22,
+  },
+
+  menuModalHandle: {
+    width: 45,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 19,
+  },
+
+  menuModalTitle: {
+    fontSize: 19,
+    fontWeight: "900",
+    marginBottom: 15,
+  },
+
+  menuItem: {
+    minHeight: 72,
+    borderRadius: 17,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+
+  menuItemIcon: {
+    width: 43,
+    height: 43,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
+  menuItemInfo: {
+    flex: 1,
+    marginLeft: 11,
   },
 
-  modalOverlay: {
+  menuItemTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  menuItemSubtitle: {
+    fontSize: 11,
+    marginTop: 3,
+  },
+
+  menuArrow: {
+    fontSize: 25,
+    fontWeight: "300",
+    marginRight: 5,
+  },
+
+  /* =========================================================
+     COMENTÁRIOS
+  ========================================================= */
+
+  commentsOverlay: {
     flex: 1,
     justifyContent: "flex-end",
   },
 
-  editModal: {
-    maxHeight: "88%",
-    paddingHorizontal: 18,
-    paddingTop: 17,
-    paddingBottom:
-      Platform.OS === "ios" ? 28 : 18,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+  commentsBackground: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor:
+      "rgba(0,0,0,0.52)",
   },
 
-  commentsModal: {
-    height: "88%",
-    paddingTop: 17,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+  commentsSheet: {
+    height: "82%",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    paddingTop: 10,
   },
 
-  modalHeader: {
+  commentsHandle: {
+    width: 45,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 13,
+  },
+
+  commentsHeader: {
     paddingHorizontal: 18,
-    paddingBottom: 15,
+    paddingBottom: 13,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
 
-  modalTitle: {
+  commentsTitle: {
     fontSize: 20,
-    fontWeight: "800",
+    fontWeight: "900",
   },
 
-  editPhotoArea: {
-    alignItems: "center",
-    paddingVertical: 12,
+  commentsSubtitle: {
+    fontSize: 11,
+    marginTop: 3,
   },
 
-  editPhoto: {
-    padding: 4,
-    borderRadius: 60,
-  },
-
-  changePhotoButton: {
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-
-  changePhotoText: {
-    fontSize: 13,
-    fontWeight: "800",
-  },
-
-  inputLabel: {
-    marginTop: 8,
-    marginBottom: 7,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  input: {
-    minHeight: 48,
-    paddingHorizontal: 14,
-    borderRadius: 9,
-    borderWidth: 1,
-    fontSize: 15,
-  },
-
-  saveButton: {
-    minHeight: 49,
-    marginTop: 20,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
-  },
-
-  saveButtonText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "800",
-  },
-
-  cancelButton: {
-    minHeight: 48,
-    marginTop: 10,
-    borderRadius: 9,
-    borderWidth: 1,
+  commentsClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  cancelButtonText: {
-    fontSize: 15,
-    fontWeight: "700",
+  commentPostPreview: {
+    marginHorizontal: 18,
+    marginBottom: 8,
+    padding: 11,
+    borderWidth: 1,
+    borderRadius: 12,
+  },
+
+  commentPostPreviewText: {
+    fontSize: 12,
+    lineHeight: 18,
   },
 
   commentsLoading: {
@@ -2382,84 +5143,288 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
+  commentsLoadingText: {
+    fontSize: 12,
+    marginTop: 9,
+  },
+
   commentsList: {
-    paddingHorizontal: 16,
-    paddingBottom: 10,
+    paddingHorizontal: 18,
+    paddingBottom: 12,
   },
 
-  emptyComments: {
-    flexGrow: 1,
-    paddingHorizontal: 25,
+  commentItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 13,
   },
 
-  emptyCommentsInner: {
-    flex: 1,
+  commentAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    marginRight: 9,
+  },
+
+  commentAvatarFallback: {
     alignItems: "center",
     justifyContent: "center",
   },
 
-  emptyCommentsTitle: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-
-  emptyCommentsText: {
-    marginTop: 5,
-    fontSize: 13,
-    textAlign: "center",
-  },
-
-  commentRow: {
-    flexDirection: "row",
-    marginBottom: 13,
-    alignItems: "flex-start",
+  commentAvatarLetter: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "900",
   },
 
   commentBubble: {
     flex: 1,
-    marginLeft: 9,
+    borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    borderRadius: 13,
   },
 
-  commentName: {
-    fontSize: 13,
-    fontWeight: "800",
-    marginBottom: 3,
+  commentAuthorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  commentAuthor: {
+    fontSize: 12,
+    fontWeight: "900",
+    flex: 1,
+  },
+
+  commentDate: {
+    fontSize: 9,
+    marginLeft: 7,
   },
 
   commentText: {
-    fontSize: 14,
+    fontSize: 13,
     lineHeight: 19,
+    marginTop: 4,
   },
 
-  commentComposer: {
-    padding: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
+  noComments: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 35,
+  },
+
+  noCommentsIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+
+  noCommentsTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  noCommentsText: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+    marginTop: 5,
+  },
+
+  commentInputArea: {
+    minHeight: 70,
+    borderTopWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 8,
+    alignItems: "center",
+  },
+
+  inputAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+
+  inputAvatarLetter: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
   },
 
   commentInput: {
     flex: 1,
-    minHeight: 43,
-    maxHeight: 100,
-    paddingHorizontal: 13,
-    paddingVertical: 10,
-    borderRadius: 21,
+    minHeight: 42,
+    maxHeight: 90,
     borderWidth: 1,
-    fontSize: 14,
+    borderRadius: 21,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    fontSize: 13,
   },
 
   sendCommentButton: {
-    width: 43,
-    height: 43,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
+    marginLeft: 7,
+  },
+
+  sendCommentDisabled: {
+    opacity: 0.45,
+  },
+
+  /* =========================================================
+     EDIÇÃO
+  ========================================================= */
+
+  editOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+
+  editBackground: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor:
+      "rgba(0,0,0,0.5)",
+  },
+
+  editSheet: {
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    borderWidth: 1,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom:
+      Platform.OS === "ios"
+        ? 35
+        : 22,
+  },
+
+  sheetHandle: {
+    width: 46,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 19,
+  },
+
+  editHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+
+  editTitle: {
+    fontSize: 21,
+    fontWeight: "900",
+  },
+
+  editSubtitle: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+
+  closeButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  closeButtonText: {
+    fontSize: 25,
+    lineHeight: 26,
+    fontWeight: "400",
+  },
+
+  photoSection: {
+    alignItems: "center",
+    marginTop: 22,
+    marginBottom: 22,
+  },
+
+  editAvatarWrapper: {
+    width: 116,
+    height: 116,
+    borderRadius: 58,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+
+  cameraBadge: {
+    position: "absolute",
+    right: -1,
+    bottom: 2,
+    width: 31,
+    height: 31,
+    borderRadius: 16,
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  cameraBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "700",
+    lineHeight: 21,
+  },
+
+  changePhotoText: {
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  editField: {
+    marginBottom: 18,
+  },
+
+  editLabel: {
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 8,
+    marginLeft: 2,
+  },
+
+  editInput: {
+    minHeight: 54,
+    borderWidth: 1,
+    borderRadius: 15,
+    paddingHorizontal: 15,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+
+  saveButton: {
+    minHeight: 55,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+
+  saveButtonDisabled: {
+    opacity: 0.65,
+  },
+
+  saveButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "900",
   },
 });
